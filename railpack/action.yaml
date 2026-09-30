@@ -30,6 +30,7 @@ dependencies:
 
 dependencyTemplates:
   - name: railpack
+    version: ${{ inputs.railpack-version }}
     installMethod: binary-download
     checkBinary: railpack
     binaryDownload:

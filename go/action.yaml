@@ -9,6 +9,7 @@ inputs:
 
 dependencyTemplates:
   - name: go
+    version: ${{ inputs.go-version }}
     checkBinary: go
     installMethod: binary-download
     binaryDownload:

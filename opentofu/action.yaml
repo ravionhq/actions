@@ -9,6 +9,7 @@ inputs:
 
 dependencyTemplates:
   - name: tofu
+    version: ${{ inputs.opentofu-version }}
     package: tofu
     installMethod: binary-download
     checkBinary: tofu
