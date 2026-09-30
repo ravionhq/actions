@@ -33,6 +33,7 @@ dependencies:
 
 dependencyTemplates:
   - name: nixpacks
+    version: ${{ inputs.nixpacks-version }}
     installMethod: binary-download
     checkBinary: nixpacks
     binaryDownload:

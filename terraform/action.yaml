@@ -13,6 +13,7 @@ dependencies:
 
 dependencyTemplates:
   - name: terraform
+    version: ${{ inputs.terraform-version }}
     installMethod: binary-download
     checkBinary: terraform
     binaryDownload:
