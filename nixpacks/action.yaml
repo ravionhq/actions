@@ -31,6 +31,12 @@ dependencies:
     package: tar
     checkBinary: tar
 
+  # tower-go reads `nixpacks plan --format json` with jq to pass the plan
+  # variables (GEM_HOME, ...) to buildx.
+  - name: jq
+    package: jq
+    checkBinary: jq
+
 dependencyTemplates:
   - name: nixpacks
     version: ${{ inputs.nixpacks-version }}
