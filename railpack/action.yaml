@@ -8,16 +8,12 @@ inputs:
     default: "0.29.0"
 
 dependencies:
-  # Keep postInstall in sync with docker/action.yaml: if this action installs
-  # docker first, the docker action's dependency check will see the binary and
-  # skip its own postInstall, so the daemon must be started here too.
   - name: docker
-    checkBinary: docker
-    verificationCommand: sudo docker info
+    package: docker.io
+    alternativePackages:
+      - docker
+    checkBinary: dockerd
     postInstall:
-      - sudo systemctl daemon-reload
-      - sudo systemctl start docker
-      - sudo systemctl enable docker
       - sudo usermod -aG docker $USER || true
 
   - name: curl
@@ -27,6 +23,12 @@ dependencies:
   - name: tar
     package: tar
     checkBinary: tar
+
+services:
+  - name: docker
+    command: dockerd
+    ready: sudo docker info
+    systemdUnit: docker
 
 dependencyTemplates:
   - name: railpack

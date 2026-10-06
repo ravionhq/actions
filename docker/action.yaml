@@ -14,16 +14,27 @@ inputs:
 
 dependencies:
   - name: docker
-    checkBinary: docker
-    # "Installed" must mean the daemon is responsive, not just that the binary
-    # exists — another action may have installed docker without starting the
-    # daemon. A failing check re-runs the (no-op) install plus postInstall.
-    verificationCommand: sudo docker info
+    package: docker.io
+    alternativePackages:
+      - docker
+    checkBinary: dockerd
     postInstall:
-      - sudo systemctl daemon-reload
-      - sudo systemctl start docker
-      - sudo systemctl enable docker
       - sudo usermod -aG docker $USER || true
+
+  - name: docker-buildx
+    package: docker-buildx
+    alternativePackages:
+      - docker-buildx-plugin
+    verificationCommand: docker buildx version
+
+services:
+  # A host that runs systemd starts the daemon through the package's unit; a
+  # sandbox guest has no systemd, so the runner starts dockerd itself and the
+  # guest starts it again on every boot.
+  - name: docker
+    command: dockerd
+    ready: sudo docker info
+    systemdUnit: docker
 
 instructions:
   # Setup Docker buildx - remote builder

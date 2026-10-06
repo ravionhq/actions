@@ -9,12 +9,18 @@ inputs:
 
 dependencies:
   - name: docker
-    checkBinary: docker
+    package: docker.io
+    alternativePackages:
+      - docker
+    checkBinary: dockerd
     postInstall:
-      - sudo systemctl daemon-reload
-      - sudo systemctl start docker
-      - sudo systemctl enable docker
       - sudo usermod -aG docker $USER || true
+
+services:
+  - name: docker
+    command: dockerd
+    ready: sudo docker info
+    systemdUnit: docker
 
 instructions:
   # Pull and extract fcenv binary from Docker image
