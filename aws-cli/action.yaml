@@ -1,0 +1,31 @@
+name: AWS CLI Setup
+description: Install version 2 of the AWS CLI
+
+inputs: {}
+
+dependencies:
+  - name: unzip
+    package: unzip
+    checkBinary: unzip
+
+  - name: aws-cli
+    checkBinary: aws
+    verificationCommand: aws --version | grep -q "^aws-cli/2\."
+    installMethod: binary-download
+    binaryDownload:
+      # AWS publishes version 2 as an installer bundle, not a single binary, so
+      # the zip is downloaded as is and its installer runs in postInstall.
+      url: https://awscli.amazonaws.com/awscli-exe-linux-$ARCH.zip
+      archiveFormat: none
+      installPath: /tmp
+      executableName: awscliv2.zip
+      architectureSpecific:
+        amd64: x86_64
+        arm64: aarch64
+    postInstall:
+      - rm -rf /tmp/aws
+      - unzip -q /tmp/awscliv2.zip -d /tmp
+      - sudo /tmp/aws/install --bin-dir /usr/local/bin --update
+      - rm -rf /tmp/aws /tmp/awscliv2.zip
+
+instructions: []
