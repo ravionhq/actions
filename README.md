@@ -186,6 +186,36 @@ Installs Railpack via binary download.
 }
 ```
 
+### 9. AWS CLI (`aws-cli`)
+Installs version 2 of the AWS CLI with AWS's installer.
+
+**Usage:**
+```json
+{
+  "instructions": [
+    {
+      "type": "uses",
+      "uses": "aws-cli"
+    },
+    {
+      "type": "command",
+      "command": "aws --version"
+    }
+  ]
+}
+```
+
+## Sandbox Images
+
+`images/` holds the guest images a sandbox step can boot with `infrastructure.image`:
+
+| Image | Contents |
+|---|---|
+| `ubuntu-24.04` | Ubuntu 24.04 LTS with Docker and the AWS CLI |
+| `debian-13` | Debian 13 with Docker and the AWS CLI |
+
+Each `image.yaml` lists the image's packages and the actions it is built with. See [AGENTS.md](AGENTS.md#images) for the format.
+
 ## Using Multiple Actions
 
 You can combine multiple actions in a single workflow:

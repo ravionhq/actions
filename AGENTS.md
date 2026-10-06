@@ -269,6 +269,54 @@ instructions:
 
 Most setup actions should have empty `instructions: []` since the dependency installation is usually sufficient.
 
+## Version Checks
+
+A dependency is skipped when its check passes. `checkBinary` only asks whether the binary exists, so an action with a version input must also check the version with `verificationCommand`; otherwise a step asking for another version than the one installed keeps the installed one:
+
+```yaml
+dependencyTemplates:
+  - name: go
+    checkBinary: go
+    verificationCommand: go version | grep -qE " go${{ inputs.go-version }}([. ]|$)"
+```
+
+## Services
+
+An action that installs a daemon declares it in `services` instead of starting it in `postInstall`. The runner starts each service after the action's dependencies are installed and waits until its `ready` command succeeds.
+
+```yaml
+services:
+  - name: docker
+    command: dockerd
+    ready: sudo docker info
+    systemdUnit: docker
+```
+
+- On a host that runs systemd, the runner runs `systemctl enable --now <systemdUnit>`.
+- In a sandbox guest, which has no systemd, the runner starts `command` itself and records it, so the guest starts it again on every boot.
+- Never call `systemctl` in `postInstall` or `instructions`: a sandbox guest has no systemd.
+
+## Images
+
+`images/<name>/image.yaml` defines a guest image a sandbox step can boot (`infrastructure.image: <name>`). Ravion builds each image from these files and publishes it; a sandbox never reads them at run time.
+
+```yaml
+name: ubuntu-24.04
+description: Ubuntu 24.04 LTS with Docker and the AWS CLI
+base: docker.io/library/ubuntu:24.04   # resolved to a digest when Ravion builds the image
+minContract: 1                          # platform contract version the image needs
+packages: [ca-certificates, curl, git]  # distribution packages baked into the image
+setup:                                  # actions the image is built with
+  - uses: docker
+  - uses: aws-cli
+env:                                    # environment every step on the image starts with
+  DOCKER_BUILDKIT: "1"
+run:                                    # image-wide settings that are not tools
+  - update-alternatives --set iptables /usr/sbin/iptables-legacy
+```
+
+A step's `setup` action with the same `uses` as one of the image's replaces it, and the step's other setup actions are added after the image's.
+
 ## Best Practices
 
 ### 1. Use Appropriate Installation Method
@@ -406,6 +454,16 @@ installScript:
 # Lifecycle hooks:
 preInstall: []string              # Commands before installation
 postInstall: []string             # Commands after installation
+verificationCommand: string       # Succeeds when the right version is installed (supports templates)
+```
+
+### Service Object
+
+```yaml
+name: string                      # Service name
+command: string                   # Starts the daemon in the foreground (supports templates)
+ready: string                     # Succeeds once the daemon answers (supports templates)
+systemdUnit: string               # Unit started on hosts that run systemd
 ```
 
 ## Examples Repository
