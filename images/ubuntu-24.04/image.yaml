@@ -1,0 +1,40 @@
+name: ubuntu-24.04
+description: Ubuntu 24.04 LTS with Docker and the AWS CLI
+
+# Every tag is resolved to a digest when Ravion builds the image; the digest is
+# recorded with the release, never read from here at run time.
+base: docker.io/library/ubuntu:24.04
+
+# The platform contract version the image needs from the host.
+minContract: 1
+
+# Distribution packages baked into the image.
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - iproute2
+  - iptables
+  - jq
+  - openssh-client
+  - sudo
+  - unzip
+  - xz-utils
+
+# Tools the image is built with. A step's setup action with the same uses
+# replaces one of these, and the step's other setup actions are added.
+setup:
+  - uses: docker
+  - uses: aws-cli
+
+env:
+  HOME: /root
+  DOCKER_BUILDKIT: "1"
+
+run:
+  # The guest kernel has no nf_tables, so iptables must use the legacy backend.
+  - update-alternatives --set iptables /usr/sbin/iptables-legacy
+  # Sandbox networking routes container traffic directly; the build cache keeps
+  # 40 GB and drops what a month of builds left unused.
+  - mkdir -p /etc/docker
+  - echo '{"allow-direct-routing":true,"builder":{"gc":{"enabled":true,"policy":[{"filter":["type=exec.cachemount","unused-for=720h"],"reservedSpace":"40GB"},{"filter":["type=source.local","unused-for=720h"],"reservedSpace":"40GB"},{"filter":["type=source.git.checkout","unused-for=720h"],"reservedSpace":"40GB"},{"reservedSpace":"40GB"},{"all":true,"reservedSpace":"40GB"}]}}}' > /etc/docker/daemon.json
