@@ -12,6 +12,7 @@ dependencyTemplates:
     package: ruby${{ inputs.ruby-version }}
     version: ${{ inputs.ruby-version }}
     checkBinary: ruby
+    verificationCommand: ruby --version | grep -qE "^ruby ${{ inputs.ruby-version }}([.p ]|$)"
     alternativePackages:
       - ruby${{ inputs.ruby-version }}-dev
       - rubygems${{ inputs.ruby-version }}

@@ -16,6 +16,7 @@ dependencyTemplates:
     version: ${{ inputs.terraform-version }}
     installMethod: binary-download
     checkBinary: terraform
+    verificationCommand: terraform version | head -1 | grep -qx "Terraform v${{ inputs.terraform-version }}"
     binaryDownload:
       url: https://releases.hashicorp.com/terraform/${{ inputs.terraform-version }}/terraform_${{ inputs.terraform-version }}_linux_$ARCH.zip
       archiveFormat: zip

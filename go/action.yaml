@@ -11,6 +11,7 @@ dependencyTemplates:
   - name: go
     version: ${{ inputs.go-version }}
     checkBinary: go
+    verificationCommand: go version | grep -qE " go${{ inputs.go-version }}([. ]|$)"
     installMethod: binary-download
     binaryDownload:
       # Go ships as a full SDK directory tree, not a single binary, so we just

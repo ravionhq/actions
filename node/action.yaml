@@ -12,6 +12,7 @@ dependencyTemplates:
     package: nodejs${{ inputs.node-version }}
     version: ${{ inputs.node-version }}
     checkBinary: node
+    verificationCommand: node --version | grep -qE "^v${{ inputs.node-version }}(\.|$)"
     alternativePackages:
       - nodejs${{ inputs.node-version }}-npm
 

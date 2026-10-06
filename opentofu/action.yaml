@@ -13,6 +13,7 @@ dependencyTemplates:
     package: tofu
     installMethod: binary-download
     checkBinary: tofu
+    verificationCommand: tofu version | head -1 | grep -qx "OpenTofu v${{ inputs.opentofu-version }}"
     binaryDownload:
       url: https://github.com/opentofu/opentofu/releases/download/v${{ inputs.opentofu-version }}/tofu_${{ inputs.opentofu-version }}_linux_$ARCH.tar.gz
       archiveFormat: tar.gz
