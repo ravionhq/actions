@@ -16,6 +16,8 @@ dependencyTemplates:
     version: ${{ inputs.terraform-version }}
     installMethod: binary-download
     checkBinary: terraform
+    # checkBinary alone ignores the version, so a kept disk would keep an old one
+    verificationCommand: '[ "$(terraform version | head -n1)" = "Terraform v${{ inputs.terraform-version }}" ]'
     binaryDownload:
       url: https://releases.hashicorp.com/terraform/${{ inputs.terraform-version }}/terraform_${{ inputs.terraform-version }}_linux_$ARCH.zip
       archiveFormat: zip

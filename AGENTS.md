@@ -328,6 +328,15 @@ postInstall:
 
 Setup actions should focus on installing dependencies. Keep `instructions: []` unless you need post-install configuration.
 
+## Sandbox kept disks
+
+Sandbox steps with `disk_cache` set boot from the disk the step's last successful run left behind. Setup actions run again on that disk, so they must work on a fresh machine and on one that has already run them:
+
+- Everything on the root disk comes back: installed tools, `/usr/local`, `/var/lib/docker` (images, volumes and containers). `/run` is a tmpfs and comes back empty, and that includes the Docker CLI config (`DOCKER_CONFIG=/run/ravion/docker`): buildx's list of builders and any `docker login`.
+- dockerd restarts containers with a restart policy at boot, and they may still be starting when the action runs. Wait for the service inside to answer before using it (see the BuildKit wait in `docker/action.yaml`).
+- `checkBinary` only checks that the binary exists, never its version. A versioned dependency needs a `verificationCommand` that compares the installed version with the input, or a kept disk keeps the old version.
+- Commands run with `set -euo pipefail`. Make them idempotent: use `--rm`, or remove a fixed-name container before creating it again.
+
 ## Testing Your Action
 
 ### 1. Create a Test Workflow
@@ -386,6 +395,7 @@ name: string                      # Unique identifier
 package: string                   # Package name (supports templates)
 version: string                   # Version (supports templates)
 checkBinary: string               # Binary to check for existing installation
+verificationCommand: string       # Command that must exit 0 for the dependency to count as installed (overrides checkBinary)
 installMethod: string             # "binary-download" | "install-script"
 alternativePackages: []string     # Additional packages to install
 
