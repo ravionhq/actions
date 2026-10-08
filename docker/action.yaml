@@ -78,10 +78,9 @@ instructions:
     command: |
       for container in buildx_buildkit_rvn-builder-container buildx_buildkit_rvn-builder-container-debug; do
         [ "$(docker container inspect -f '{{.State.Running}}' "$container" 2>/dev/null)" = true ] || continue
-        n=0
-        until docker exec "$container" buildctl debug workers > /dev/null 2>&1; do
-          n=$((n + 1))
-          if [ "$n" -ge 75 ]; then
+        deadline=$((SECONDS + 15))
+        until timeout 2 docker exec "$container" buildctl debug workers > /dev/null 2>&1; do
+          if [ "$SECONDS" -ge "$deadline" ]; then
             echo "Builder container $container did not start after 15s; recreating it"
             docker rm -f "$container" > /dev/null
             break
