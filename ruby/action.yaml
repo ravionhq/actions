@@ -112,7 +112,7 @@ dependencyTemplates:
           rm -f "$archive"
         elif [ "$ID" = amzn ]; then
           pkg="ruby$(printf '%s' "$R" | cut -d. -f1,2)"
-          if ! dnf list available "$pkg" >/dev/null 2>&1; then
+          if ! dnf list "$pkg" >/dev/null 2>&1; then
             available="$(dnf list available 'ruby[0-9]*' 2>/dev/null | awk '{print $1}' | sed -En 's/^(ruby[0-9]+\.[0-9]+)\..*/\1/p' | sort -Vu | paste -sd ', ' -)"
             echo "Amazon Linux 2023 has no Ruby $R package (available: $available)" >&2
             exit 1
