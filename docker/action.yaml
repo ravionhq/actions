@@ -81,12 +81,12 @@ instructions:
         n=0
         until docker exec "$container" buildctl debug workers > /dev/null 2>&1; do
           n=$((n + 1))
-          if [ "$n" -ge 60 ]; then
-            echo "Builder container $container did not start after 60s; recreating it"
+          if [ "$n" -ge 75 ]; then
+            echo "Builder container $container did not start after 15s; recreating it"
             docker rm -f "$container" > /dev/null
             break
           fi
-          sleep 1
+          sleep 0.2
         done
       done
 
