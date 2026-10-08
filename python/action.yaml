@@ -43,8 +43,16 @@ dependencyTemplates:
         cd /
         py="$(UV_PYTHON_INSTALL_DIR="$prefix" uv python find --managed-python "$R")"
         bin="$(dirname "$(readlink -f "$py")")"
-        find "$prefix" -name EXTERNALLY-MANAGED -type f -delete
-        sudo find /usr/local/bin -maxdepth 1 -type l -lname "$prefix/*" -delete
+        for marker in "$prefix"/*/lib/python*/EXTERNALLY-MANAGED; do
+          [ -f "$marker" ] || continue
+          rm -f "$marker"
+        done
+        for link in /usr/local/bin/*; do
+          [ -L "$link" ] || continue
+          case "$(readlink "$link")" in
+            "$prefix"/*) sudo rm -f "$link" ;;
+          esac
+        done
         for file in "$bin"/*; do
           [ -e "$file" ] || continue
           sudo ln -sf "$file" "/usr/local/bin/$(basename "$file")"

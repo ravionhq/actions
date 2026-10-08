@@ -53,7 +53,12 @@ dependencyTemplates:
         sudo tar -xzf "$archive" -C /opt/ravion/node --strip-components=1
         sudo mkdir -p /opt/ravion/node/etc
         printf 'prefix=/usr/local\n' | sudo tee /opt/ravion/node/etc/npmrc >/dev/null
-        sudo find /usr/local/bin -maxdepth 1 -type l -lname '/opt/ravion/node/*' -delete
+        for link in /usr/local/bin/*; do
+          [ -L "$link" ] || continue
+          case "$(readlink "$link")" in
+            /opt/ravion/node/*) sudo rm -f "$link" ;;
+          esac
+        done
         for file in /opt/ravion/node/bin/*; do
           sudo ln -sf "$file" "/usr/local/bin/$(basename "$file")"
         done

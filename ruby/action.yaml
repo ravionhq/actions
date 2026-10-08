@@ -99,7 +99,12 @@ dependencyTemplates:
           sudo chown -R "$(id -u):$(id -g)" "$version_dir"
           touch "$version_dir/$arch.complete"
           prefix="$version_dir/$arch"
-          sudo find /usr/local/bin -maxdepth 1 -type l -lname '/opt/hostedtoolcache/Ruby/*' -delete
+          for link in /usr/local/bin/*; do
+            [ -L "$link" ] || continue
+            case "$(readlink "$link")" in
+              /opt/hostedtoolcache/Ruby/*) sudo rm -f "$link" ;;
+            esac
+          done
           for file in "$prefix"/bin/*; do
             [ -e "$file" ] || continue
             sudo ln -sf "$file" "/usr/local/bin/$(basename "$file")"
@@ -112,8 +117,17 @@ dependencyTemplates:
             echo "Amazon Linux 2023 has no Ruby $R package (available: $available)" >&2
             exit 1
           fi
+          while IFS= read -r old_devel; do
+            [ -n "$old_devel" ] || continue
+            [ "$old_devel" = "$pkg-devel" ] || sudo dnf remove -y "$old_devel"
+          done < <(rpm -qa --queryformat '%{NAME}\n' | grep -E '^ruby[0-9]+\.[0-9]+-devel$' || true)
           sudo dnf install -y "$pkg" "$pkg-rubygems" "$pkg-rubygem-bundler" "$pkg-devel"
-          sudo find /usr/local/bin -maxdepth 1 -type l -lname '/opt/hostedtoolcache/Ruby/*' -delete
+          for link in /usr/local/bin/*; do
+            [ -L "$link" ] || continue
+            case "$(readlink "$link")" in
+              /opt/hostedtoolcache/Ruby/*) sudo rm -f "$link" ;;
+            esac
+          done
           sudo rm -f /usr/local/bin/ruby /usr/local/bin/gem /usr/local/bin/bundle /usr/local/bin/bundler
           sudo ln -sf "/usr/bin/$pkg" /usr/local/bin/ruby
           sudo ln -sf "/usr/bin/$pkg-gem" /usr/local/bin/gem
