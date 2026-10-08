@@ -13,6 +13,8 @@ dependencyTemplates:
     package: tofu
     installMethod: binary-download
     checkBinary: tofu
+    # checkBinary alone ignores the version, so a kept disk would keep an old one
+    verificationCommand: '[ "$(tofu version | head -n1)" = "OpenTofu v${{ inputs.opentofu-version }}" ]'
     binaryDownload:
       url: https://github.com/opentofu/opentofu/releases/download/v${{ inputs.opentofu-version }}/tofu_${{ inputs.opentofu-version }}_linux_$ARCH.tar.gz
       archiveFormat: tar.gz

@@ -33,6 +33,8 @@ dependencyTemplates:
     version: ${{ inputs.railpack-version }}
     installMethod: binary-download
     checkBinary: railpack
+    # checkBinary alone ignores the version, so a kept disk would keep an old one
+    verificationCommand: '[ "$(railpack --version)" = "railpack version ${{ inputs.railpack-version }}" ]'
     binaryDownload:
       url: https://github.com/railwayapp/railpack/releases/download/v${{ inputs.railpack-version }}/railpack-v${{ inputs.railpack-version }}-$ARCH.tar.gz
       archiveFormat: tar.gz

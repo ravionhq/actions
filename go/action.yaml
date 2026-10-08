@@ -11,6 +11,8 @@ dependencyTemplates:
   - name: go
     version: ${{ inputs.go-version }}
     checkBinary: go
+    # checkBinary alone ignores the version, so a kept disk would keep an old one
+    verificationCommand: go version | grep -qF "go version go${{ inputs.go-version }} "
     installMethod: binary-download
     binaryDownload:
       # Go ships as a full SDK directory tree, not a single binary, so we just

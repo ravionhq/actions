@@ -13,6 +13,7 @@ dependencies:
   # skip its own postInstall, so the daemon must be started here too.
   - name: docker
     checkBinary: docker
+    verificationCommand: sudo docker info
     postInstall:
       - sudo systemctl daemon-reload
       - sudo systemctl start docker
@@ -36,6 +37,8 @@ dependencyTemplates:
     version: ${{ inputs.nixpacks-version }}
     installMethod: binary-download
     checkBinary: nixpacks
+    # checkBinary alone ignores the version, so a kept disk would keep an old one
+    verificationCommand: '[ "$(nixpacks --version)" = "nixpacks ${{ inputs.nixpacks-version }}" ]'
     binaryDownload:
       url: https://github.com/railwayapp/nixpacks/releases/download/v${{ inputs.nixpacks-version }}/nixpacks-v${{ inputs.nixpacks-version }}-x86_64-unknown-linux-gnu.tar.gz
       archiveFormat: tar.gz
@@ -44,6 +47,7 @@ dependencyTemplates:
       executableName: nixpacks
       permissions: "755"
 
+instructions:
   # Verify Nixpacks installation
   - type: command
     command: |
