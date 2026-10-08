@@ -48,9 +48,18 @@ dependencyTemplates:
         archive="/tmp/node-$v-linux-$node_arch.tar.gz"
         curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 10 \
           "https://nodejs.org/dist/$v/node-$v-linux-$node_arch.tar.gz" -o "$archive"
+        staging=/opt/ravion/node.new
+        sudo rm -rf "$staging"
+        sudo mkdir -p "$staging"
+        sudo tar -xzf "$archive" -C "$staging" --strip-components=1
+        actual="$("$staging/bin/node" --version)"
+        actual="${actual#v}"
+        case "$actual" in
+          "$R"|"$R".*) ;;
+          *) echo "Installed $actual but $R was requested" >&2; exit 1 ;;
+        esac
         sudo rm -rf /opt/ravion/node
-        sudo mkdir -p /opt/ravion/node
-        sudo tar -xzf "$archive" -C /opt/ravion/node --strip-components=1
+        sudo mv "$staging" /opt/ravion/node
         sudo mkdir -p /opt/ravion/node/etc
         printf 'prefix=/usr/local\n' | sudo tee /opt/ravion/node/etc/npmrc >/dev/null
         for link in /usr/local/bin/*; do

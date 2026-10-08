@@ -13,6 +13,7 @@ dependencyTemplates:
     version: ${{ inputs.ruby-version }}
     installMethod: binary-download
     verificationCommand: |
+      set -euo pipefail
       R='${{ inputs.ruby-version }}'
       A="$(/usr/local/bin/ruby -e 'print RUBY_VERSION')"
       case "$A" in
@@ -21,6 +22,8 @@ dependencyTemplates:
       esac
       /usr/local/bin/gem --version >/dev/null
       /usr/local/bin/bundle --version >/dev/null
+      ruby_bin="$(/usr/local/bin/ruby -e 'print Gem.bindir')"
+      printf 'export PATH="%s:$PATH"\n' "$ruby_bin" | sudo tee /etc/profile.d/ravion-ruby.sh >/dev/null
     binaryDownload:
       url: https://raw.githubusercontent.com/ruby/setup-ruby/master/ruby-builder-versions.json
       archiveFormat: none
@@ -31,6 +34,7 @@ dependencyTemplates:
         set -euo pipefail
         R='${{ inputs.ruby-version }}'
         . /etc/os-release
+        old_dir_to_remove=
         machine="$(uname -m)"
         case "$machine" in
           x86_64) arch=x64 ;;
@@ -87,13 +91,13 @@ dependencyTemplates:
             /opt/hostedtoolcache/Ruby/*/bin/ruby)
               old_dir="${old_ruby%/bin/ruby}"
               old_dir="${old_dir%/*}"
-              old_version="${old_dir##*/}"
-              if [ "$old_version" != "$v" ]; then
-                sudo rm -rf "$old_dir"
+              if [ "$old_dir" != "/opt/hostedtoolcache/Ruby/$v" ]; then
+                old_dir_to_remove="$old_dir"
               fi
               ;;
           esac
           version_dir="/opt/hostedtoolcache/Ruby/$v"
+          sudo rm -rf "$version_dir"
           sudo install -d -o "$(id -u)" -g "$(id -g)" "$version_dir"
           tar -xzf "$archive" -C "$version_dir"
           sudo chown -R "$(id -u):$(id -g)" "$version_dir"
@@ -137,6 +141,8 @@ dependencyTemplates:
           echo "Setup Ruby supports Ubuntu and Amazon Linux 2023" >&2
           exit 1
         fi
+        ruby_bin="$(/usr/local/bin/ruby -e 'print Gem.bindir')"
+        printf 'export PATH="%s:$PATH"\n' "$ruby_bin" | sudo tee /etc/profile.d/ravion-ruby.sh >/dev/null
         sudo rm -f "$index"
         actual="$(/usr/local/bin/ruby -e 'print RUBY_VERSION')"
         case "$actual" in
@@ -146,5 +152,8 @@ dependencyTemplates:
             ;;
           *) echo "Installed $actual but $R was requested" >&2; exit 1 ;;
         esac
+        if [ -n "$old_dir_to_remove" ]; then
+          sudo rm -rf "$old_dir_to_remove"
+        fi
 
 instructions: []

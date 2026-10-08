@@ -13,6 +13,7 @@ dependencyTemplates:
     version: ${{ inputs.python-version }}
     installMethod: binary-download
     verificationCommand: |
+      set -euo pipefail
       R='${{ inputs.python-version }}'
       A="$(/usr/local/bin/python3 --version)"
       A="${A#Python }"
@@ -21,6 +22,8 @@ dependencyTemplates:
         *) exit 1 ;;
       esac
       /usr/local/bin/python3 -m pip --version >/dev/null
+      bin="$(dirname "$(readlink -f /usr/local/bin/python3)")"
+      printf 'export PATH="%s:$PATH"\n' "$bin" | sudo tee /etc/profile.d/ravion-python.sh >/dev/null
     binaryDownload:
       url: https://github.com/astral-sh/uv/releases/latest/download/uv-$ARCH.tar.gz
       archiveFormat: tar.gz
@@ -37,7 +40,6 @@ dependencyTemplates:
         prefix=/opt/ravion/python
         uid="$(id -u)"
         gid="$(id -g)"
-        sudo rm -rf "$prefix"
         sudo install -d -o "$uid" -g "$gid" "$prefix"
         UV_PYTHON_INSTALL_DIR="$prefix" uv python install "$R" --no-bin
         cd /
@@ -63,5 +65,11 @@ dependencyTemplates:
           "$R"|"$R".*) /usr/local/bin/python3 -m pip --version >/dev/null ;;
           *) echo "Installed $actual but $R was requested" >&2; exit 1 ;;
         esac
+        printf 'export PATH="%s:$PATH"\n' "$bin" | sudo tee /etc/profile.d/ravion-python.sh >/dev/null
+        version_dir="$(dirname "$bin")"
+        for old_dir in "$prefix"/cpython-*; do
+          [ -d "$old_dir" ] || continue
+          [ "$old_dir" = "$version_dir" ] || sudo rm -rf "$old_dir"
+        done
 
 instructions: []
