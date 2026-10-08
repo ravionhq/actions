@@ -69,6 +69,26 @@ instructions:
       EOF
       echo "Created buildkitd.toml configuration"
 
+  # A kept disk can bring back builder containers from an earlier run. dockerd
+  # restarts them at boot, but buildx has forgotten them (its config is not on
+  # the kept disk), so `docker buildx create` would connect before buildkitd
+  # is listening and fail. Wait for each running one to answer, using the same
+  # probe buildx runs after starting a builder itself.
+  - type: command
+    command: |
+      for container in buildx_buildkit_rvn-builder-container buildx_buildkit_rvn-builder-container-debug; do
+        [ "$(docker container inspect -f '{{.State.Running}}' "$container" 2>/dev/null)" = true ] || continue
+        deadline=$((SECONDS + 15))
+        until timeout 2 docker exec "$container" buildctl debug workers > /dev/null 2>&1; do
+          if [ "$SECONDS" -ge "$deadline" ]; then
+            echo "Builder container $container did not start after 15s; recreating it"
+            docker rm -f "$container" > /dev/null
+            break
+          fi
+          sleep 0.2
+        done
+      done
+
   # Create docker-container builder (normal)
   - type: command
     command: |
