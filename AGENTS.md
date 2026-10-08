@@ -395,7 +395,7 @@ name: string                      # Unique identifier
 package: string                   # Package name (supports templates)
 version: string                   # Version (supports templates)
 checkBinary: string               # Binary to check for existing installation
-verificationCommand: string             # Command that must exit 0 for the dependency to count as installed (overrides checkBinary)
+verificationCommand: string       # Command that must exit 0 for the dependency to count as installed (overrides checkBinary)
 installMethod: string             # "binary-download" | "install-script"
 alternativePackages: []string     # Additional packages to install
 
