@@ -26,7 +26,7 @@ Installs Node.js with npm support.
 }
 ```
 
-**Supported versions:** 16, 18, 20, 21, 22 (uses package manager)
+**Supported versions:** major like 20 or exact like 20.11.1 (installs the newest matching official Node.js release)
 
 ### 2. Python (`python`)
 Installs Python with pip support.
@@ -50,7 +50,7 @@ Installs Python with pip support.
 }
 ```
 
-**Supported versions:** 3.8, 3.9, 3.10, 3.11, 3.12 (uses package manager)
+**Supported versions:** major.minor like 3.11 or exact like 3.11.17 (installs the newest matching standalone build)
 
 ### 3. Terraform (`terraform`)
 Installs Terraform via binary download.
@@ -140,7 +140,7 @@ Installs Ruby with gem support.
 }
 ```
 
-**Supported versions:** 3.0, 3.1, 3.2, 3.3 (uses package manager)
+**Supported versions:** major.minor like 3.2 or exact like 3.2.8 (installs the newest matching build on Ubuntu; Amazon Linux uses its distro package)
 
 ### 7. Go (`go`)
 Installs Go via binary download.

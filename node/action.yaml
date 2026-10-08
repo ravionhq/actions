@@ -1,18 +1,82 @@
 name: Setup Node.js
-description: Install a specific version of Node.js
+description: Install a specific Node.js version (major like 20 or exact like 20.11.1)
 
 inputs:
   node-version:
-    description: Node.js version to install
+    description: Node.js version to install (major like 20 or exact like 20.11.1)
     required: false
     default: "20"
 
 dependencyTemplates:
   - name: node
-    package: nodejs${{ inputs.node-version }}
+    package: node
     version: ${{ inputs.node-version }}
-    checkBinary: node
-    alternativePackages:
-      - nodejs${{ inputs.node-version }}-npm
+    installMethod: binary-download
+    verificationCommand: |
+      R='${{ inputs.node-version }}'
+      R="${R#v}"
+      A="$(/usr/local/bin/node --version)"
+      A="${A#v}"
+      case "$A" in
+        "$R"|"$R".*) ;;
+        *) exit 1 ;;
+      esac
+      /usr/local/bin/npm --version >/dev/null
+    binaryDownload:
+      url: https://nodejs.org/dist/index.json
+      archiveFormat: none
+      installPath: /tmp
+      executableName: ravion-node-index.json
+    postInstall:
+      - |
+        set -euo pipefail
+        R='${{ inputs.node-version }}'
+        R="${R#v}"
+        arch="$(uname -m)"
+        case "$arch" in
+          x86_64) node_arch=x64 ;;
+          aarch64) node_arch=arm64 ;;
+          *) echo "Unsupported architecture: $arch" >&2; exit 1 ;;
+        esac
+        index=/tmp/ravion-node-index.json
+        pattern="$(printf '%s' "$R" | sed 's/\./\\./g')"
+        v="$(grep -oE "\"version\":\"v${pattern}(\\.[0-9]+)*\"" "$index" | cut -d '"' -f4 | sort -V | tail -1 || true)"
+        if [ -z "$v" ]; then
+          echo "No Node.js version matching $R was found" >&2
+          exit 1
+        fi
+        archive="/tmp/node-$v-linux-$node_arch.tar.gz"
+        curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 10 \
+          "https://nodejs.org/dist/$v/node-$v-linux-$node_arch.tar.gz" -o "$archive"
+        staging=/opt/ravion/node.new
+        sudo rm -rf "$staging"
+        sudo mkdir -p "$staging"
+        sudo tar -xzf "$archive" -C "$staging" --strip-components=1
+        actual="$("$staging/bin/node" --version)"
+        actual="${actual#v}"
+        case "$actual" in
+          "$R"|"$R".*) ;;
+          *) echo "Installed $actual but $R was requested" >&2; exit 1 ;;
+        esac
+        sudo rm -rf /opt/ravion/node
+        sudo mv "$staging" /opt/ravion/node
+        sudo mkdir -p /opt/ravion/node/etc
+        printf 'prefix=/usr/local\n' | sudo tee /opt/ravion/node/etc/npmrc >/dev/null
+        for link in /usr/local/bin/*; do
+          [ -L "$link" ] || continue
+          case "$(readlink "$link")" in
+            /opt/ravion/node/*) sudo rm -f "$link" ;;
+          esac
+        done
+        for file in /opt/ravion/node/bin/*; do
+          sudo ln -sf "$file" "/usr/local/bin/$(basename "$file")"
+        done
+        sudo rm -f "$archive" "$index"
+        actual="$(/usr/local/bin/node --version)"
+        actual="${actual#v}"
+        case "$actual" in
+          "$R"|"$R".*) /usr/local/bin/npm --version >/dev/null ;;
+          *) echo "Installed $actual but $R was requested" >&2; exit 1 ;;
+        esac
 
 instructions: []

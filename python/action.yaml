@@ -1,20 +1,75 @@
 name: Setup Python
-description: Install a specific version of Python
+description: Install a specific Python version (major.minor like 3.11 or exact like 3.11.17)
 
 inputs:
   python-version:
-    description: Python version to install
+    description: Python version to install (major.minor like 3.11 or exact like 3.11.17)
     required: false
     default: "3.11"
 
 dependencyTemplates:
   - name: python
-    package: python${{ inputs.python-version }}
+    package: python
     version: ${{ inputs.python-version }}
-    checkBinary: python${{ inputs.python-version }}
-    alternativePackages:
-      - python${{ inputs.python-version }}-dev
-      - python${{ inputs.python-version }}-venv
-      - python3-pip
+    installMethod: binary-download
+    verificationCommand: |
+      set -euo pipefail
+      R='${{ inputs.python-version }}'
+      A="$(/usr/local/bin/python3 --version)"
+      A="${A#Python }"
+      case "$A" in
+        "$R"|"$R".*) ;;
+        *) exit 1 ;;
+      esac
+      /usr/local/bin/python3 -m pip --version >/dev/null
+      bin="$(dirname "$(readlink -f /usr/local/bin/python3)")"
+      printf 'export PATH="%s:$PATH"\n' "$bin" | sudo tee /etc/profile.d/ravion-python.sh >/dev/null
+    binaryDownload:
+      url: https://github.com/astral-sh/uv/releases/latest/download/uv-$ARCH.tar.gz
+      archiveFormat: tar.gz
+      binaryPath: uv-$ARCH/uv
+      installPath: /usr/local/bin
+      executableName: uv
+      architectureSpecific:
+        amd64: x86_64-unknown-linux-gnu
+        arm64: aarch64-unknown-linux-gnu
+    postInstall:
+      - |
+        set -euo pipefail
+        R='${{ inputs.python-version }}'
+        prefix=/opt/ravion/python
+        uid="$(id -u)"
+        gid="$(id -g)"
+        sudo install -d -o "$uid" -g "$gid" "$prefix"
+        UV_PYTHON_INSTALL_DIR="$prefix" uv python install "$R" --no-bin
+        cd /
+        py="$(UV_PYTHON_INSTALL_DIR="$prefix" uv python find --managed-python "$R")"
+        bin="$(dirname "$(readlink -f "$py")")"
+        for marker in "$prefix"/*/lib/python*/EXTERNALLY-MANAGED; do
+          [ -f "$marker" ] || continue
+          rm -f "$marker"
+        done
+        for link in /usr/local/bin/*; do
+          [ -L "$link" ] || continue
+          case "$(readlink "$link")" in
+            "$prefix"/*) sudo rm -f "$link" ;;
+          esac
+        done
+        for file in "$bin"/*; do
+          [ -e "$file" ] || continue
+          sudo ln -sf "$file" "/usr/local/bin/$(basename "$file")"
+        done
+        actual="$(/usr/local/bin/python3 --version)"
+        actual="${actual#Python }"
+        case "$actual" in
+          "$R"|"$R".*) /usr/local/bin/python3 -m pip --version >/dev/null ;;
+          *) echo "Installed $actual but $R was requested" >&2; exit 1 ;;
+        esac
+        printf 'export PATH="%s:$PATH"\n' "$bin" | sudo tee /etc/profile.d/ravion-python.sh >/dev/null
+        version_dir="$(dirname "$bin")"
+        for old_dir in "$prefix"/cpython-*; do
+          [ -d "$old_dir" ] || continue
+          [ "$old_dir" = "$version_dir" ] || sudo rm -rf "$old_dir"
+        done
 
 instructions: []

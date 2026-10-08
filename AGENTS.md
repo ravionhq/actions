@@ -108,28 +108,15 @@ dependencyTemplates:
 - `checkBinary`: Binary to check if tool is already installed
 - `alternativePackages`: Additional packages to install (e.g., dev tools, plugins)
 
-**Example - Node.js:**
+**Example - Package-Managed Tool:**
 ```yaml
 dependencyTemplates:
-  - name: node
-    package: nodejs${{ inputs.node-version }}
-    version: ${{ inputs.node-version }}
-    checkBinary: node
+  - name: tool
+    package: tool
+    version: ${{ inputs.version }}
+    checkBinary: tool
     alternativePackages:
-      - nodejs${{ inputs.node-version }}-npm
-```
-
-**Example - Python:**
-```yaml
-dependencyTemplates:
-  - name: python
-    package: python${{ inputs.python-version }}
-    version: ${{ inputs.python-version }}
-    checkBinary: python${{ inputs.python-version }}
-    alternativePackages:
-      - python${{ inputs.python-version }}-dev
-      - python${{ inputs.python-version }}-venv
-      - python3-pip
+      - tool-extra
 ```
 
 ### 2. Binary Download
@@ -273,7 +260,7 @@ Most setup actions should have empty `instructions: []` since the dependency ins
 
 ### 1. Use Appropriate Installation Method
 
-- **Package Manager**: Node.js, Python, Ruby, system tools
+- **Package Manager**: Tools available in system repositories
 - **Binary Download**: Go, Terraform, OpenTofu, compiled tools
 - **Install Script**: Tools with official installers (gcloud, rustup)
 
