@@ -1,5 +1,5 @@
 {
-  "name": "Cache benchmark v3 / warm round 1",
+  "name": "Cache benchmark v3 / warm round 2",
   "on": {
     "push": {
       "branches": [
@@ -20,12 +20,12 @@
   },
   "jobs": {
     "github": {
-      "name": "restore (github, 1)",
+      "name": "restore (github, 2)",
       "runs-on": "ubuntu-24.04",
       "timeout-minutes": 8,
       "env": {
         "BENCH_PROVIDER": "github",
-        "BENCH_REP": "1"
+        "BENCH_REP": "2"
       },
       "steps": [
         {
@@ -62,7 +62,7 @@
         },
         {
           "name": "Prime / Preserve timing records small",
-          "if": "${{ always() }}",
+          "if": "${{ always() && steps.prime_small.outcome != 'skipped' }}",
           "run": "cat \"$RUNNER_TEMP/cache-benchmark-small.jsonl\""
         },
         {
@@ -90,7 +90,7 @@
         },
         {
           "name": "Prime / Preserve timing records medium",
-          "if": "${{ always() }}",
+          "if": "${{ always() && steps.prime_medium.outcome != 'skipped' }}",
           "run": "cat \"$RUNNER_TEMP/cache-benchmark-medium.jsonl\""
         },
         {
@@ -122,7 +122,7 @@
         },
         {
           "name": "Preserve timing records small",
-          "if": "${{ always() }}",
+          "if": "${{ always() && steps.small.outcome != 'skipped' }}",
           "run": "cat \"$RUNNER_TEMP/cache-benchmark-small.jsonl\""
         },
         {
@@ -150,7 +150,7 @@
         },
         {
           "name": "Preserve timing records medium",
-          "if": "${{ always() }}",
+          "if": "${{ always() && steps.medium.outcome != 'skipped' }}",
           "run": "cat \"$RUNNER_TEMP/cache-benchmark-medium.jsonl\""
         },
         {
