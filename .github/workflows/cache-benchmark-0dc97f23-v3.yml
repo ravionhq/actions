@@ -1,5 +1,5 @@
 {
-  "name": "Cache benchmark v3 / round 0",
+  "name": "Cache benchmark v3 / round 1",
   "on": {
     "push": {
       "branches": [
@@ -20,19 +20,19 @@
   },
   "jobs": {
     "github": {
-      "name": "seed (github, 0)",
+      "name": "restore (github, 1)",
       "runs-on": "ubuntu-24.04",
       "timeout-minutes": 8,
       "env": {
         "BENCH_PROVIDER": "github",
-        "BENCH_REP": "0"
+        "BENCH_REP": "1"
       },
       "steps": [
         {
           "uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
           "with": {
             "repository": "ravionhq/actions",
-            "ref": "${{ github.sha }}",
+            "ref": "7b036e5a5e085f5e38a7cce3c9355e38440eaa21",
             "persist-credentials": false
           }
         },
@@ -45,47 +45,48 @@
           "run": "python3 .github/scripts/cache-benchmark-fixture.py machine\npython3 .github/scripts/cache-benchmark-fixture.py empty"
         },
         {
-          "name": "Protect existing cache quota",
-          "env": {
-            "GH_TOKEN": "${{ github.token }}"
-          },
-          "run": "python3 - <<'PY'\nimport json,os,urllib.request\nurl='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/actions/cache/usage'\nreq=urllib.request.Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})\nwith urllib.request.urlopen(req) as r: usage=json.load(r)\nprint('BENCHMARK '+json.dumps({'kind':'quota','usage':usage}))\nassert usage['active_caches_size_in_bytes']+1400*1024**2 < 8*1024**3, 'Insufficient safe cache headroom'\nPY"
-        },
-        {
-          "name": "Generate small",
-          "run": "python3 .github/scripts/cache-benchmark-fixture.py generate small"
-        },
-        {
-          "name": "Save small",
+          "name": "Restore small",
           "id": "small",
-          "uses": "actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830",
+          "uses": "actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830",
           "env": {
             "NODE_OPTIONS": "--require=${{ github.workspace }}/.github/scripts/cache-benchmark-observe.cjs",
             "BENCH_FIXTURE": "small",
-            "BENCH_MODE": "save"
+            "BENCH_MODE": "restore"
           },
           "with": {
             "path": ".cache-benchmark-0dc97f23-v3/small",
-            "key": "cb-0dc97f23-v3-github-small"
+            "key": "cb-0dc97f23-v3-github-small",
+            "fail-on-cache-miss": true
           }
         },
         {
-          "name": "Generate medium",
-          "run": "python3 .github/scripts/cache-benchmark-fixture.py generate medium"
+          "name": "Verify exact hit and bytes small",
+          "env": {
+            "HIT": "${{ steps.small.outputs.cache-hit }}"
+          },
+          "run": "test \"$HIT\" = true\npython3 .github/scripts/cache-benchmark-fixture.py verify small"
         },
         {
-          "name": "Save medium",
+          "name": "Restore medium",
           "id": "medium",
-          "uses": "actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830",
+          "uses": "actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830",
           "env": {
             "NODE_OPTIONS": "--require=${{ github.workspace }}/.github/scripts/cache-benchmark-observe.cjs",
             "BENCH_FIXTURE": "medium",
-            "BENCH_MODE": "save"
+            "BENCH_MODE": "restore"
           },
           "with": {
             "path": ".cache-benchmark-0dc97f23-v3/medium",
-            "key": "cb-0dc97f23-v3-github-medium"
+            "key": "cb-0dc97f23-v3-github-medium",
+            "fail-on-cache-miss": true
           }
+        },
+        {
+          "name": "Verify exact hit and bytes medium",
+          "env": {
+            "HIT": "${{ steps.medium.outputs.cache-hit }}"
+          },
+          "run": "test \"$HIT\" = true\npython3 .github/scripts/cache-benchmark-fixture.py verify medium"
         }
       ]
     }
