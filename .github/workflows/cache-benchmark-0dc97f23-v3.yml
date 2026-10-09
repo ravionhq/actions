@@ -32,7 +32,7 @@
           "uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
           "with": {
             "repository": "ravionhq/actions",
-            "ref": "7b036e5a5e085f5e38a7cce3c9355e38440eaa21",
+            "ref": "9c705b13b8cbbf33592f32d930713dba5fb2429f",
             "persist-credentials": false
           }
         },
@@ -51,13 +51,19 @@
           "env": {
             "NODE_OPTIONS": "--require=${{ github.workspace }}/.github/scripts/cache-benchmark-observe.cjs",
             "BENCH_FIXTURE": "small",
-            "BENCH_MODE": "restore"
+            "BENCH_MODE": "restore",
+            "BENCH_RECORD_FILE": "${{ runner.temp }}/cache-benchmark-small.jsonl"
           },
           "with": {
             "path": ".cache-benchmark-0dc97f23-v3/small",
             "key": "cb-0dc97f23-v3-github-small",
             "fail-on-cache-miss": true
           }
+        },
+        {
+          "name": "Preserve timing records small",
+          "if": "${{ always() }}",
+          "run": "cat \"$RUNNER_TEMP/cache-benchmark-small.jsonl\""
         },
         {
           "name": "Verify exact hit and bytes small",
@@ -73,13 +79,19 @@
           "env": {
             "NODE_OPTIONS": "--require=${{ github.workspace }}/.github/scripts/cache-benchmark-observe.cjs",
             "BENCH_FIXTURE": "medium",
-            "BENCH_MODE": "restore"
+            "BENCH_MODE": "restore",
+            "BENCH_RECORD_FILE": "${{ runner.temp }}/cache-benchmark-medium.jsonl"
           },
           "with": {
             "path": ".cache-benchmark-0dc97f23-v3/medium",
             "key": "cb-0dc97f23-v3-github-medium",
             "fail-on-cache-miss": true
           }
+        },
+        {
+          "name": "Preserve timing records medium",
+          "if": "${{ always() }}",
+          "run": "cat \"$RUNNER_TEMP/cache-benchmark-medium.jsonl\""
         },
         {
           "name": "Verify exact hit and bytes medium",
