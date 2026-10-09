@@ -1,5 +1,5 @@
 {
-  "name": "Cache benchmark v3 / fresh round 7",
+  "name": "Cache benchmark v3 / warm round 1",
   "on": {
     "push": {
       "branches": [
@@ -20,12 +20,12 @@
   },
   "jobs": {
     "github": {
-      "name": "restore (github, 7)",
+      "name": "restore (github, 1)",
       "runs-on": "ubuntu-24.04",
       "timeout-minutes": 8,
       "env": {
         "BENCH_PROVIDER": "github",
-        "BENCH_REP": "7"
+        "BENCH_REP": "1"
       },
       "steps": [
         {
@@ -43,6 +43,66 @@
         {
           "name": "Machine and empty-destination evidence",
           "run": "python3 .github/scripts/cache-benchmark-fixture.py machine\npython3 .github/scripts/cache-benchmark-fixture.py empty"
+        },
+        {
+          "name": "Prime / Restore small",
+          "id": "prime_small",
+          "uses": "actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830",
+          "env": {
+            "NODE_OPTIONS": "--require=${{ github.workspace }}/.github/scripts/cache-benchmark-observe.cjs",
+            "BENCH_FIXTURE": "small",
+            "BENCH_MODE": "prime",
+            "BENCH_RECORD_FILE": "${{ runner.temp }}/cache-benchmark-small.jsonl"
+          },
+          "with": {
+            "path": ".cache-benchmark-0dc97f23-v3/small",
+            "key": "cb-0dc97f23-v3-github-small",
+            "fail-on-cache-miss": true
+          }
+        },
+        {
+          "name": "Prime / Preserve timing records small",
+          "if": "${{ always() }}",
+          "run": "cat \"$RUNNER_TEMP/cache-benchmark-small.jsonl\""
+        },
+        {
+          "name": "Prime / Verify exact hit and bytes small",
+          "env": {
+            "HIT": "${{ steps.prime_small.outputs.cache-hit }}"
+          },
+          "run": "test \"$HIT\" = true\npython3 .github/scripts/cache-benchmark-fixture.py verify small"
+        },
+        {
+          "name": "Prime / Restore medium",
+          "id": "prime_medium",
+          "uses": "actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830",
+          "env": {
+            "NODE_OPTIONS": "--require=${{ github.workspace }}/.github/scripts/cache-benchmark-observe.cjs",
+            "BENCH_FIXTURE": "medium",
+            "BENCH_MODE": "prime",
+            "BENCH_RECORD_FILE": "${{ runner.temp }}/cache-benchmark-medium.jsonl"
+          },
+          "with": {
+            "path": ".cache-benchmark-0dc97f23-v3/medium",
+            "key": "cb-0dc97f23-v3-github-medium",
+            "fail-on-cache-miss": true
+          }
+        },
+        {
+          "name": "Prime / Preserve timing records medium",
+          "if": "${{ always() }}",
+          "run": "cat \"$RUNNER_TEMP/cache-benchmark-medium.jsonl\""
+        },
+        {
+          "name": "Prime / Verify exact hit and bytes medium",
+          "env": {
+            "HIT": "${{ steps.prime_medium.outputs.cache-hit }}"
+          },
+          "run": "test \"$HIT\" = true\npython3 .github/scripts/cache-benchmark-fixture.py verify medium"
+        },
+        {
+          "name": "Empty destination after priming",
+          "run": "python3 .github/scripts/cache-benchmark-fixture.py empty"
         },
         {
           "name": "Restore small",
