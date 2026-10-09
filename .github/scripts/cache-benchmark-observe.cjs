@@ -2,6 +2,7 @@
 const http = require('node:http')
 const https = require('node:https')
 const cp = require('node:child_process')
+const fs = require('node:fs')
 const {performance} = require('node:perf_hooks')
 const started = performance.now()
 const requests = []
@@ -13,7 +14,7 @@ for (const transport of [http, https]) {
     const req = original.apply(this, args)
     const path = req.path || ''
     const lookup = path.includes('GetCacheEntryDownloadURL')
-    const row = {method: req.method, host: req.host, range: req.getHeader('range') || null, kind: lookup ? 'lookup' : req.method === 'GET' ? 'download' : 'other', start_ms: stamp(), bytes: 0}
+    const row = {method: req.method, host: req.host, range: req.getHeader('range') || req.getHeader('x-ms-range') || null, kind: lookup ? 'lookup' : req.method === 'GET' ? 'download' : 'other', start_ms: stamp(), bytes: 0}
     requests.push(row)
     const emit = req.emit
     req.emit = function (event, ...values) {
@@ -48,5 +49,8 @@ cp.spawn = function (file, args, ...rest) {
   return child
 }
 process.once('exit', code => {
-  console.log('BENCHMARK ' + JSON.stringify({kind:'action', node_version:process.version, provider:process.env.BENCH_PROVIDER, rep:process.env.BENCH_REP, fixture:process.env.BENCH_FIXTURE, mode:process.env.BENCH_MODE, key:process.env.INPUT_KEY, utc:new Date().toISOString(), duration_ms:stamp(), code, results_host:process.env.ACTIONS_RESULTS_URL ? new URL(process.env.ACTIONS_RESULTS_URL).hostname : null, requests, children}))
+  const context = {provider:process.env.BENCH_PROVIDER, rep:process.env.BENCH_REP, fixture:process.env.BENCH_FIXTURE, mode:process.env.BENCH_MODE}
+  const action = {kind:'action', ...context, node_version:process.version, key:process.env.INPUT_KEY, utc:new Date().toISOString(), duration_ms:stamp(), code, results_host:process.env.ACTIONS_RESULTS_URL ? new URL(process.env.ACTIONS_RESULTS_URL).hostname : null, request_count:requests.length, requests:[], children}
+  const events = [...requests.map(request => ({kind:'request', ...context, request})), action]
+  fs.writeFileSync(process.env.BENCH_RECORD_FILE, events.map(event => 'BENCHMARK ' + JSON.stringify(event)).join('\n') + '\n')
 })
