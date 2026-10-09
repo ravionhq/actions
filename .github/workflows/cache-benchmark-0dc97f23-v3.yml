@@ -1,5 +1,5 @@
 {
-  "name": "Cache benchmark v3 / warm round 4",
+  "name": "Cache benchmark v3 / warm round 5",
   "on": {
     "push": {
       "branches": [
@@ -20,12 +20,12 @@
   },
   "jobs": {
     "github": {
-      "name": "restore (github, 4)",
+      "name": "restore (github, 5)",
       "runs-on": "ubuntu-24.04",
       "timeout-minutes": 8,
       "env": {
         "BENCH_PROVIDER": "github",
-        "BENCH_REP": "4"
+        "BENCH_REP": "5"
       },
       "steps": [
         {
