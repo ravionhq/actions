@@ -1,5 +1,5 @@
 {
-  "name": "Cache benchmark v3 / round 1",
+  "name": "Cache benchmark v3 / round 2",
   "on": {
     "push": {
       "branches": [
@@ -20,12 +20,12 @@
   },
   "jobs": {
     "github": {
-      "name": "restore (github, 1)",
+      "name": "restore (github, 2)",
       "runs-on": "ubuntu-24.04",
       "timeout-minutes": 8,
       "env": {
         "BENCH_PROVIDER": "github",
-        "BENCH_REP": "1"
+        "BENCH_REP": "2"
       },
       "steps": [
         {
