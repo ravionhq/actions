@@ -26,14 +26,14 @@
       "env": {
         "DBC_PROVIDER": "github",
         "DBC_FIXTURE": "node",
-        "DBC_ROUND": "0"
+        "DBC_ROUND": "1"
       },
       "steps": [
         {
           "uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
           "with": {
             "repository": "ravionhq/actions",
-            "ref": "${{ github.sha }}",
+            "ref": "8800b6b5b291fe7d8b1ce7d1ab9eaf234f470f93",
             "persist-credentials": false
           }
         },
@@ -85,14 +85,14 @@
       "env": {
         "DBC_PROVIDER": "github",
         "DBC_FIXTURE": "go",
-        "DBC_ROUND": "0"
+        "DBC_ROUND": "1"
       },
       "steps": [
         {
           "uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
           "with": {
             "repository": "ravionhq/actions",
-            "ref": "${{ github.sha }}",
+            "ref": "8800b6b5b291fe7d8b1ce7d1ab9eaf234f470f93",
             "persist-credentials": false
           }
         },
