@@ -1,0 +1,5 @@
+name: Docker cache benchmark
+description: Time a matched Docker build and verify the exported image
+runs:
+  using: node24
+  main: entry.cjs

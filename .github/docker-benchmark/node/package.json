@@ -1,0 +1,1 @@
+{"name":"docker-cache-benchmark-web","private":true,"type":"module","packageManager":"pnpm@10.17.1","scripts":{"build":"vite build"},"dependencies":{"react":"18.2.0","react-dom":"18.2.0","zod":"3.25.76"},"devDependencies":{"vite":"7.0.5","typescript":"5.9.2"}}

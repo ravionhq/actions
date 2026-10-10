@@ -1,0 +1,143 @@
+{
+  "name": "Docker cache benchmark / round 0",
+  "on": {
+    "push": {
+      "branches": [
+        "devin/1791646800-docker-cache-benchmark"
+      ],
+      "paths": [
+        ".github/workflows/docker-benchmark-0dc97f23.yml"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read",
+    "actions": "read"
+  },
+  "concurrency": {
+    "group": "docker-cache-benchmark-0dc97f23",
+    "cancel-in-progress": false
+  },
+  "jobs": {
+    "github-node": {
+      "name": "Docker cache (github, node, round 0)",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 18,
+      "env": {
+        "DBC_PROVIDER": "github",
+        "DBC_FIXTURE": "node",
+        "DBC_ROUND": "0"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+          "with": {
+            "repository": "ravionhq/actions",
+            "ref": "${{ github.sha }}",
+            "persist-credentials": false
+          }
+        },
+        {
+          "name": "Builder setup timer",
+          "run": "date +%s.%N > \"$RUNNER_TEMP/dbc-setup-start\""
+        },
+        {
+          "name": "Protect repository cache capacity",
+          "env": {
+            "TOKEN": "${{ github.token }}"
+          },
+          "run": "python3 - <<'PY'\nimport json,os,urllib.request\nr=urllib.request.Request('https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/actions/cache/usage',headers={'Authorization':'Bearer '+os.environ['TOKEN'],'Accept':'application/vnd.github+json'})\nwith urllib.request.urlopen(r) as response: usage=json.load(response)\nprint('CACHE_QUOTA '+json.dumps(usage))\nassert usage['active_caches_size_in_bytes']+1024**3 < 8*1024**3, 'Insufficient safe cache capacity'\nPY"
+        },
+        {
+          "name": "Set up Docker builder",
+          "uses": "docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f",
+          "with": {
+            "name": "dbc-0dc97f23-node",
+            "version": "v0.23.0",
+            "driver-opts": "image=moby/buildkit:v0.20.2",
+            "cache-binary": false,
+            "keep-state": false,
+            "cleanup": true
+          }
+        },
+        {
+          "name": "Record builder setup time",
+          "run": "python3 - <<'PY'\nimport json,os,time,pathlib\nstart=float((pathlib.Path(os.environ['RUNNER_TEMP'])/'dbc-setup-start').read_text())\nprint('BUILDER_SETUP '+json.dumps({'seconds':time.time()-start}))\nPY\ndocker buildx du"
+        },
+        {
+          "name": "Measure and verify node",
+          "uses": "./.github/docker-benchmark",
+          "env": {
+            "DBC_GH_TOKEN": "${{ github.token }}"
+          }
+        },
+        {
+          "name": "Record retained builder state",
+          "if": "${{ always() }}",
+          "run": "docker buildx du\ndocker system df"
+        }
+      ]
+    },
+    "github-go": {
+      "name": "Docker cache (github, go, round 0)",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 18,
+      "env": {
+        "DBC_PROVIDER": "github",
+        "DBC_FIXTURE": "go",
+        "DBC_ROUND": "0"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+          "with": {
+            "repository": "ravionhq/actions",
+            "ref": "${{ github.sha }}",
+            "persist-credentials": false
+          }
+        },
+        {
+          "name": "Builder setup timer",
+          "run": "date +%s.%N > \"$RUNNER_TEMP/dbc-setup-start\""
+        },
+        {
+          "name": "Protect repository cache capacity",
+          "env": {
+            "TOKEN": "${{ github.token }}"
+          },
+          "run": "python3 - <<'PY'\nimport json,os,urllib.request\nr=urllib.request.Request('https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/actions/cache/usage',headers={'Authorization':'Bearer '+os.environ['TOKEN'],'Accept':'application/vnd.github+json'})\nwith urllib.request.urlopen(r) as response: usage=json.load(response)\nprint('CACHE_QUOTA '+json.dumps(usage))\nassert usage['active_caches_size_in_bytes']+1024**3 < 8*1024**3, 'Insufficient safe cache capacity'\nPY"
+        },
+        {
+          "name": "Set up Docker builder",
+          "uses": "docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f",
+          "with": {
+            "name": "dbc-0dc97f23-go",
+            "version": "v0.23.0",
+            "driver-opts": "image=moby/buildkit:v0.20.2",
+            "cache-binary": false,
+            "keep-state": false,
+            "cleanup": true
+          }
+        },
+        {
+          "name": "Record builder setup time",
+          "run": "python3 - <<'PY'\nimport json,os,time,pathlib\nstart=float((pathlib.Path(os.environ['RUNNER_TEMP'])/'dbc-setup-start').read_text())\nprint('BUILDER_SETUP '+json.dumps({'seconds':time.time()-start}))\nPY\ndocker buildx du"
+        },
+        {
+          "name": "Measure and verify go",
+          "uses": "./.github/docker-benchmark",
+          "env": {
+            "DBC_GH_TOKEN": "${{ github.token }}"
+          }
+        },
+        {
+          "name": "Record retained builder state",
+          "if": "${{ always() }}",
+          "run": "docker buildx du\ndocker system df"
+        }
+      ],
+      "needs": "github-node",
+      "if": "${{ !cancelled() }}"
+    }
+  }
+}
