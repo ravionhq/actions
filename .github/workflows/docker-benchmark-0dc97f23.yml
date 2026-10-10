@@ -26,7 +26,7 @@
       "env": {
         "DBC_PROVIDER": "github",
         "DBC_FIXTURE": "node",
-        "DBC_ROUND": "1"
+        "DBC_ROUND": "2"
       },
       "steps": [
         {
@@ -85,7 +85,7 @@
       "env": {
         "DBC_PROVIDER": "github",
         "DBC_FIXTURE": "go",
-        "DBC_ROUND": "1"
+        "DBC_ROUND": "2"
       },
       "steps": [
         {
