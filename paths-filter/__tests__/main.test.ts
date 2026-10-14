@@ -8,6 +8,7 @@ const mockOutputs: Record<string, unknown> = {}
 const mockFailures: string[] = []
 const mockWarnings: string[] = []
 const mockGetOctokit = jest.fn()
+const mockSetSecret = jest.fn()
 interface MockActionContext {
   eventName: string
   ref: string
@@ -31,6 +32,7 @@ jest.mock('@actions/core', () => ({
   setOutput: jest.fn((name: string, value: unknown) => {
     mockOutputs[name] = value
   }),
+  setSecret: mockSetSecret,
   setFailed: jest.fn((message: string) => {
     mockFailures.push(message)
   }),
@@ -53,6 +55,7 @@ interface GitFixture {
   root: string
   serverUrl: string
   remoteUrl: string
+  remotePath: string
   base: string
   candidate: string
   unrelated: string
@@ -87,6 +90,7 @@ beforeEach(() => {
   mockFailures.length = 0
   mockWarnings.length = 0
   mockGetOctokit.mockReset()
+  mockSetSecret.mockReset()
   mockContext.eventName = 'workflow_dispatch'
   mockContext.ref = ''
   mockContext.sha = ''
@@ -200,6 +204,7 @@ docs:
     expect(mockOutputs.docs_count).toBe(1)
     expect(mockOutputs.base_sha).toBe(fixture.base)
     expect(mockOutputs.head_sha).toBe(fixture.candidate)
+    expect(mockContext.payload.before).toBe('0'.repeat(40))
     expect(mockGetOctokit).not.toHaveBeenCalled()
 
     fs.writeFileSync(path.join(checkout, '.github', 'filters.yml'), "wrong: '**'\n")
@@ -212,6 +217,62 @@ docs:
     expect(mockOutputs.source).toBe(true)
     expect(mockOutputs.docs).toBe(true)
     expect(mockOutputs).not.toHaveProperty('wrong')
+  })
+
+  test('reuses complete checkout history without fetching from an unavailable origin', async () => {
+    const checkout = cloneFullCheckout('queue-full-history')
+    const unavailableRemote = `${fixture.remotePath}.unavailable`
+    fs.renameSync(fixture.remotePath, unavailableRemote)
+
+    try {
+      configureQueuePush()
+      mockInputs['working-directory'] = checkout
+      mockInputs.token = ''
+      mockInputs.filters = "all: '**'\n"
+
+      await run()
+
+      expect(mockFailures).toEqual([])
+      expect(mockOutputs.base_sha).toBe(fixture.base)
+      expect(mockOutputs.head_sha).toBe(fixture.candidate)
+      expect(mockOutputs.all).toBe(true)
+    } finally {
+      fs.renameSync(unavailableRemote, fixture.remotePath)
+    }
+  })
+
+  test('masks the token and authorization header for a warm HTTPS checkout', async () => {
+    const checkout = cloneFullCheckout('queue-https-warm')
+    const token = 'queue-test-token'
+    const priorProxyEnv = new Map(
+      ['HTTPS_PROXY', 'https_proxy', 'NO_PROXY', 'no_proxy'].map(key => [key, process.env[key]])
+    )
+    git(checkout, 'remote', 'set-url', 'origin', 'https://github.com/acme/widget.git')
+    process.env.HTTPS_PROXY = 'http://127.0.0.1:1'
+    process.env.https_proxy = 'http://127.0.0.1:1'
+    process.env.NO_PROXY = ''
+    process.env.no_proxy = ''
+
+    try {
+      configureQueuePush({serverUrl: 'https://github.com'})
+      mockInputs['working-directory'] = checkout
+      mockInputs.token = token
+      mockInputs.filters = "all: '**'\n"
+
+      await run()
+
+      expect(mockFailures).toEqual([])
+      expect(mockSetSecret).toHaveBeenCalledWith(token)
+      expect(mockSetSecret).toHaveBeenCalledWith(Buffer.from(`x-access-token:${token}`).toString('base64'))
+    } finally {
+      for (const [key, value] of priorProxyEnv) {
+        if (value === undefined) {
+          delete process.env[key]
+        } else {
+          process.env[key] = value
+        }
+      }
+    }
   })
 
   test('works without checkout, reads candidate filter contents, and removes its temporary repository', async () => {
@@ -242,22 +303,15 @@ docs:
     [
       'oversized generation',
       `refs/heads/ravion/merge-queue/${'a'.repeat(101)}/${'2'.repeat(40)}`,
-      '2'.repeat(40),
-      '2'.repeat(40)
+      '1'.repeat(40),
+      '1'.repeat(40)
     ],
-    ['zero ref SHA', `refs/heads/ravion/merge-queue/generation/${'0'.repeat(40)}`, '0'.repeat(40), '0'.repeat(40)],
-    ['uppercase ref SHA', `refs/heads/ravion/merge-queue/generation/${'A'.repeat(40)}`, 'a'.repeat(40), 'a'.repeat(40)],
+    ['zero ref base SHA', `refs/heads/ravion/merge-queue/generation/${'0'.repeat(40)}`, '1'.repeat(40), '1'.repeat(40)],
     [
-      'mismatched GITHUB_SHA',
-      `refs/heads/ravion/merge-queue/generation/${'2'.repeat(40)}`,
-      '3'.repeat(40),
-      '2'.repeat(40)
-    ],
-    [
-      'mismatched payload head',
-      `refs/heads/ravion/merge-queue/generation/${'2'.repeat(40)}`,
-      '2'.repeat(40),
-      '3'.repeat(40)
+      'uppercase ref base SHA',
+      `refs/heads/ravion/merge-queue/generation/${'A'.repeat(40)}`,
+      '1'.repeat(40),
+      '1'.repeat(40)
     ]
   ])('rejects %s', async (_name, ref, githubSha, payloadAfter) => {
     configureQueuePush({ref, githubSha, payloadAfter})
@@ -270,6 +324,28 @@ docs:
     expect(mockOutputs).toEqual({})
   })
 
+  test('rejects a candidate SHA that is not lowercase hexadecimal', async () => {
+    configureQueuePush({githubSha: 'A'.repeat(40), payloadAfter: 'A'.repeat(40)})
+    mockInputs.token = ''
+    mockInputs.filters = "all: '**'\n"
+
+    await run()
+
+    expect(mockFailures.join('\n')).toMatch(/nonzero lowercase SHAs/i)
+    expect(mockOutputs).toEqual({})
+  })
+
+  test('rejects payload after that does not match GITHUB_SHA', async () => {
+    configureQueuePush({payloadAfter: '3'.repeat(40)})
+    mockInputs.token = ''
+    mockInputs.filters = "all: '**'\n"
+
+    await run()
+
+    expect(mockFailures.join('\n')).toMatch(/payload ref.*GITHUB_SHA/i)
+    expect(mockOutputs).toEqual({})
+  })
+
   test('rejects a mismatched payload ref', async () => {
     configureQueuePush({payloadRef: 'refs/heads/main'})
     mockInputs.token = ''
@@ -278,6 +354,39 @@ docs:
     await run()
 
     expect(mockFailures.join('\n')).toMatch(/payload ref.*GITHUB_SHA/i)
+    expect(mockOutputs).toEqual({})
+  })
+
+  test('rejects a payload repository that differs from the GitHub context', async () => {
+    configureQueuePush({repositoryFullName: 'other/widget'})
+    mockInputs.token = ''
+    mockInputs.filters = "all: '**'\n"
+
+    await run()
+
+    expect(mockFailures.join('\n')).toMatch(/repository does not match/i)
+    expect(mockOutputs).toEqual({})
+  })
+
+  test('rejects a token when the server authority is not HTTPS', async () => {
+    configureQueuePush()
+    mockInputs.token = 'must-not-be-sent'
+    mockInputs.filters = "all: '**'\n"
+
+    await run()
+
+    expect(mockFailures.join('\n')).toMatch(/authentication is only allowed with an HTTPS server/i)
+    expect(mockOutputs).toEqual({})
+  })
+
+  test('rejects deleted queue push events', async () => {
+    configureQueuePush({deleted: true})
+    mockInputs.token = ''
+    mockInputs.filters = "all: '**'\n"
+
+    await run()
+
+    expect(mockFailures.join('\n')).toMatch(/distinct nonzero lowercase SHAs/i)
     expect(mockOutputs).toEqual({})
   })
 
@@ -295,14 +404,14 @@ docs:
     expect(mockOutputs).toEqual({})
   })
 
-  test('rejects a queue base equal to the candidate', async () => {
+  test('rejects a ref ending in the candidate SHA when it makes base and head equal', async () => {
     configureQueuePush({base: fixture.candidate})
     mockInputs.token = ''
     mockInputs.filters = "all: '**'\n"
 
     await run()
 
-    expect(mockFailures.join('\n')).toMatch(/different from the candidate/i)
+    expect(mockFailures.join('\n')).toMatch(/distinct nonzero lowercase SHAs/i)
     expect(mockOutputs).toEqual({})
   })
 
@@ -374,24 +483,29 @@ function configureQueuePush(
     ref?: string
     githubSha?: string
     payloadAfter?: string
+    payloadBefore?: string
     payloadRef?: string
+    repositoryFullName?: string
+    deleted?: boolean
+    serverUrl?: string
   } = {}
 ): void {
   const base = overrides.base ?? fixture.base
   const githubSha = overrides.githubSha ?? fixture.candidate
   const payloadAfter = overrides.payloadAfter ?? fixture.candidate
-  const ref = overrides.ref ?? `refs/heads/ravion/merge-queue/generation_1-test/${fixture.candidate}`
+  const ref = overrides.ref ?? `refs/heads/ravion/merge-queue/generation_1-test/${base}`
   mockContext.eventName = 'push'
   mockContext.ref = ref
   mockContext.sha = githubSha
-  mockContext.serverUrl = fixture.serverUrl
+  mockContext.serverUrl = overrides.serverUrl ?? fixture.serverUrl
   mockContext.payload = {
     ref: overrides.payloadRef ?? ref,
-    before: base,
+    before: overrides.payloadBefore ?? '0'.repeat(40),
     after: payloadAfter,
+    deleted: overrides.deleted ?? false,
     repository: {
       default_branch: 'main',
-      full_name: 'acme/widget'
+      full_name: overrides.repositoryFullName ?? 'acme/widget'
     }
   }
 }
@@ -406,6 +520,12 @@ function clearActionResult(): void {
 function cloneCheckout(name: string, branch: 'main' | 'queue'): string {
   const checkout = path.join(fixture.root, name)
   execFileSync('git', ['clone', '--quiet', '--depth=1', '--branch', branch, fixture.remoteUrl, checkout])
+  return checkout
+}
+
+function cloneFullCheckout(name: string): string {
+  const checkout = path.join(fixture.root, name)
+  execFileSync('git', ['clone', '--quiet', '--branch', 'queue', fixture.remoteUrl, checkout])
   return checkout
 }
 
@@ -459,6 +579,7 @@ function createGitFixture(): GitFixture {
     root,
     serverUrl: pathToFileURL(serverRoot),
     remoteUrl: pathToFileURL(remote),
+    remotePath: remote,
     base,
     candidate,
     unrelated

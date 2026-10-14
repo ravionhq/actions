@@ -890,6 +890,7 @@ const fs = __importStar(__nccwpck_require__(7147));
 const os = __importStar(__nccwpck_require__(2037));
 const path = __importStar(__nccwpck_require__(1017));
 const exec_1 = __nccwpck_require__(1514);
+const core = __importStar(__nccwpck_require__(2186));
 const github = __importStar(__nccwpck_require__(5438));
 const git_1 = __nccwpck_require__(3374);
 const queueRefPrefix = 'refs/heads/ravion/merge-queue';
@@ -900,24 +901,27 @@ function getQueuePush(baseInput, refInput, token) {
     if (github.context.eventName !== 'push' || !github.context.ref.startsWith(queueRefPrefix)) {
         return undefined;
     }
+    maskSecret(token);
     const ref = github.context.ref;
     const match = /^refs\/heads\/ravion\/merge-queue\/[A-Za-z0-9_-]{1,100}\/([0-9a-f]{40})$/.exec(ref);
     if (!match) {
         throw new Error(`Malformed merge queue ref '${ref}'`);
     }
-    const headSha = match[1];
+    const baseSha = match[1];
     const payload = github.context.payload;
     const { owner, repo } = github.context.repo;
     const serverUrl = github.context.serverUrl;
-    const baseSha = payload.before;
-    if (!shaPattern.test(headSha) || headSha === nullSha || github.context.sha !== headSha) {
-        throw new Error('Merge queue ref SHA must match the nonzero lowercase GITHUB_SHA');
+    const headSha = github.context.sha;
+    if (payload.deleted ||
+        !shaPattern.test(baseSha) ||
+        baseSha === nullSha ||
+        !shaPattern.test(headSha) ||
+        headSha === nullSha ||
+        baseSha === headSha) {
+        throw new Error('Merge queue ref base and GITHUB_SHA must be distinct nonzero lowercase SHAs');
     }
     if (payload.ref !== ref || payload.after !== headSha || !shaPattern.test(payload.after)) {
         throw new Error('Merge queue ref, payload ref, payload after, and GITHUB_SHA must match');
-    }
-    if (!shaPattern.test(baseSha) || baseSha === nullSha || baseSha === headSha) {
-        throw new Error('Merge queue payload before must be a nonzero commit different from the candidate');
     }
     if (((_a = payload.repository) === null || _a === void 0 ? void 0 : _a.full_name) !== `${owner}/${repo}`) {
         throw new Error('Merge queue payload repository does not match the GitHub context repository');
@@ -935,6 +939,7 @@ exports.getQueuePush = getQueuePush;
 async function getQueueChanges(queue, token, filterPath) {
     const workingDirectory = process.cwd();
     let configPrefix = '';
+    let checkoutRepository;
     if (await isCheckout(workingDirectory)) {
         const checkoutHead = (await runGit(workingDirectory, ['rev-parse', 'HEAD'])).trim();
         if (checkoutHead !== queue.headSha) {
@@ -947,6 +952,7 @@ async function getQueueChanges(queue, token, filterPath) {
             throw new Error('Git origin does not point exactly to the trusted GitHub repository');
         }
         configPrefix = (await runGit(workingDirectory, ['rev-parse', '--show-prefix'])).trim();
+        checkoutRepository = await getCheckoutRepository(workingDirectory);
     }
     const temporaryRoot = process.env.RUNNER_TEMP || os.tmpdir();
     fs.mkdirSync(temporaryRoot, { recursive: true });
@@ -955,6 +961,9 @@ async function getQueueChanges(queue, token, filterPath) {
     try {
         await runGit(temporaryRepository, ['init', '--bare', '--quiet'], gitEnv);
         await runGit(temporaryRepository, ['remote', 'add', 'origin', queue.remoteUrl], gitEnv);
+        if (checkoutRepository) {
+            configureCheckoutAlternates(temporaryRepository, checkoutRepository);
+        }
         await acquireQueueCommits(temporaryRepository, queue, gitEnv);
         const filesOutput = await runGit(temporaryRepository, ['diff', '--no-renames', '--name-status', '-z', `${queue.baseSha}..${queue.headSha}`], gitEnv);
         const changes = { files: (0, git_1.parseGitDiffOutput)(filesOutput) };
@@ -970,12 +979,26 @@ async function getQueueChanges(queue, token, filterPath) {
 }
 exports.getQueueChanges = getQueueChanges;
 async function acquireQueueCommits(repository, queue, env) {
+    const hasBase = await hasCommit(repository, queue.baseSha, env);
+    const hasHead = await hasCommit(repository, queue.headSha, env);
+    const shallow = (await runGit(repository, ['rev-parse', '--is-shallow-repository'], env)).trim() === 'true';
+    if (hasBase && hasHead) {
+        if (await isAncestor(repository, queue.baseSha, queue.headSha, env)) {
+            return;
+        }
+        if (!shallow) {
+            throw new Error(`Pinned queue base ${queue.baseSha} is not an ancestor of candidate ${queue.headSha}`);
+        }
+    }
     const depths = [32, 128, 512, 2048];
     for (const depth of depths) {
         await runGit(repository, ['fetch', '--no-tags', '--filter=blob:none', `--depth=${depth}`, 'origin', queue.baseSha, queue.headSha], env);
         if ((await hasCommit(repository, queue.baseSha, env)) && (await hasCommit(repository, queue.headSha, env))) {
             if (await isAncestor(repository, queue.baseSha, queue.headSha, env)) {
                 return;
+            }
+            if ((await runGit(repository, ['rev-parse', '--is-shallow-repository'], env)).trim() !== 'true') {
+                throw new Error(`Pinned queue base ${queue.baseSha} is not an ancestor of candidate ${queue.headSha}`);
             }
         }
     }
@@ -996,6 +1019,22 @@ async function isCheckout(directory) {
         env: makeGitEnvironment('', github.context.serverUrl)
     });
     return result.exitCode === 0 && result.stdout.trim() === 'true';
+}
+async function getCheckoutRepository(directory) {
+    const objectDirectory = path.resolve(directory, (await runGit(directory, ['rev-parse', '--git-path', 'objects'])).trim());
+    const shallowFile = path.resolve(directory, (await runGit(directory, ['rev-parse', '--git-path', 'shallow'])).trim());
+    return {
+        objectDirectory,
+        shallowFile: fs.existsSync(shallowFile) ? shallowFile : undefined
+    };
+}
+function configureCheckoutAlternates(repository, checkout) {
+    const infoDirectory = path.join(repository, 'objects', 'info');
+    fs.mkdirSync(infoDirectory, { recursive: true });
+    fs.writeFileSync(path.join(infoDirectory, 'alternates'), `${checkout.objectDirectory.replace(/\\/g, '/')}\n`);
+    if (checkout.shallowFile) {
+        fs.copyFileSync(checkout.shallowFile, path.join(repository, 'shallow'));
+    }
 }
 async function hasCommit(repository, sha, env) {
     const result = await (0, exec_1.getExecOutput)('git', ['-C', repository, 'cat-file', '-e', `${sha}^{commit}`], {
@@ -1030,24 +1069,36 @@ function makeGitEnvironment(token, serverUrl) {
     for (const key of Object.keys(env)) {
         if (key.startsWith('GIT_') ||
             key.startsWith('INPUT_') ||
-            ['ACTIONS_ID_TOKEN_REQUEST_TOKEN', 'ACTIONS_RUNTIME_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN', 'SSH_ASKPASS'].includes(key)) {
+            key.startsWith('SSH_') ||
+            /(?:TOKEN|PASSWORD|SECRET|CREDENTIAL|ACCESS_KEY)/i.test(key) ||
+            ['CURL_CA_BUNDLE', 'SSL_CERT_DIR', 'SSL_CERT_FILE'].includes(key) ||
+            ['ACTIONS_ID_TOKEN_REQUEST_TOKEN', 'ACTIONS_RUNTIME_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN'].includes(key)) {
             delete env[key];
         }
     }
     env.GIT_CONFIG_NOSYSTEM = '1';
     env.GIT_CONFIG_GLOBAL = process.platform === 'win32' ? 'NUL' : '/dev/null';
     env.GIT_TERMINAL_PROMPT = '0';
-    env.GIT_CONFIG_COUNT = token ? '3' : '2';
-    env.GIT_CONFIG_KEY_0 = `http.${serverUrl}/.extraheader`;
-    env.GIT_CONFIG_VALUE_0 = '';
-    env.GIT_CONFIG_KEY_1 = 'credential.helper';
+    env.GIT_CONFIG_KEY_0 = 'http.followRedirects';
+    env.GIT_CONFIG_VALUE_0 = 'false';
+    env.GIT_CONFIG_KEY_1 = `http.${serverUrl}/.extraheader`;
     env.GIT_CONFIG_VALUE_1 = '';
+    env.GIT_CONFIG_KEY_2 = 'credential.helper';
+    env.GIT_CONFIG_VALUE_2 = '';
+    env.GIT_CONFIG_COUNT = token ? '4' : '3';
     if (token) {
+        maskSecret(token);
         const authorization = Buffer.from(`x-access-token:${token}`).toString('base64');
-        env.GIT_CONFIG_KEY_2 = `http.${serverUrl}/.extraheader`;
-        env.GIT_CONFIG_VALUE_2 = `AUTHORIZATION: basic ${authorization}`;
+        maskSecret(authorization);
+        env.GIT_CONFIG_KEY_3 = `http.${serverUrl}/.extraheader`;
+        env.GIT_CONFIG_VALUE_3 = `AUTHORIZATION: basic ${authorization}`;
     }
     return env;
+}
+function maskSecret(secret) {
+    if (secret) {
+        core.setSecret(secret);
+    }
 }
 function getTrustedRemoteUrl(serverUrl, owner, repo, token) {
     if (!/^[A-Za-z0-9_.-]+$/.test(owner) || !/^[A-Za-z0-9_.-]+$/.test(repo)) {
@@ -1064,7 +1115,8 @@ function getTrustedRemoteUrl(serverUrl, owner, repo, token) {
         server.password ||
         server.search ||
         server.hash ||
-        !['https:', 'http:', 'file:'].includes(server.protocol) ||
+        !['https:', 'file:'].includes(server.protocol) ||
+        (server.protocol === 'file:' && server.hostname !== '') ||
         (server.protocol !== 'file:' && server.pathname !== '/')) {
         throw new Error('GitHub server URL is not an allowed repository authority');
     }

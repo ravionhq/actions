@@ -52,30 +52,51 @@ don't allow this because they don't work on a level of individual jobs or steps.
 ### Ravion merge queue pushes
 
 This fork also recognizes `push` events whose ref is exactly
-`refs/heads/ravion/merge-queue/<generation>/<candidate-sha>`. The generation is 1–100
+`refs/heads/ravion/merge-queue/<generation>/<base-sha>`. The generation is 1–100
 ASCII letters, digits, underscores, or hyphens, and the final component is a 40-character
-lowercase commit SHA. The ref SHA, `GITHUB_SHA`, and push payload `after` must match; the
-payload `before` supplies the pinned base commit and must be a nonzero SHA.
+lowercase base commit SHA. `GITHUB_SHA` and push payload `after` identify the candidate
+commit, and must be equal, nonzero lowercase SHAs distinct from the ref's base SHA. The push
+payload `before` is ignored because immutable branch creation reports the all-zero SHA there.
 
 Queue mode takes precedence over the `base` and `ref` inputs. If supplied, `base` must equal
-the payload's pinned `before` SHA, and `ref` must equal either the queue ref or candidate
-SHA. A conflict or malformed queue-prefixed ref fails the action rather than falling back
-to normal comparison.
+the SHA in the queue ref, and `ref` must equal either the queue ref or candidate SHA. A
+conflict, deleted push, or malformed queue-prefixed ref fails the action rather than falling
+back to normal comparison.
 
 Queue comparisons use a direct `base..candidate` Git diff with rename detection disabled.
 The base must be an ancestor of the candidate. With an existing checkout, the action first
 verifies that `HEAD` is the candidate commit and that `origin` is the repository identified
-by the GitHub event. It then fetches the pinned commits into an isolated temporary bare
-repository in both checkout and no-checkout modes, removing it afterward. No candidate code
-is checked out or executed. File-based filters are read from the candidate commit, while
-inline filters work without a checkout. Queue file comparison uses Git only, not the pull
-request files API.
+by the GitHub event. The isolated temporary bare repository reuses existing checkout objects
+as alternates and fetches missing commits/history only when necessary; without a checkout it
+fetches the pinned commits directly. Its shallow boundary metadata is kept consistent with
+the checkout, and the temporary repository is removed afterward. No candidate code is
+checked out or executed. File-based filters are read from the candidate commit, while inline
+filters work without a checkout. Queue file comparison uses Git only, not the pull request
+files API.
 
-The token is used only for authenticated Git fetches from the validated repository and is
-not written to Git configuration or included in command arguments. The action does not
-change global Git configuration.
+Authenticated fetches require an HTTPS GitHub server authority, disable HTTP redirects, and
+use a transient authorization header from the validated repository. The token and encoded
+header are masked, never written to Git configuration or included in command arguments, and
+inherited Git, SSH, and credential environment settings are cleared for Git subprocesses.
+The action does not change persistent Git configuration.
 
-## Example
+## Ravion fork quick start
+
+Replace `<commit-sha>` with the full commit SHA after this fork is published:
+
+```yaml
+- uses: ravionhq/actions/paths-filter@<commit-sha>
+  id: changes
+  with:
+    filters: |
+      src:
+        - 'src/**'
+
+- if: steps.changes.outputs.src == 'true'
+  run: echo "Source files changed"
+```
+
+## Upstream example
 
 ```yaml
 - uses: dorny/paths-filter@v3
@@ -90,7 +111,7 @@ change global Git configuration.
   run: ...
 ```
 
-For more scenarios see [examples](#examples) section.
+For upstream scenarios, see the [upstream examples](#upstream-examples) section.
 
 ## Notes
 
@@ -113,7 +134,7 @@ For more scenarios see [examples](#examples) section.
 
 For more information, see [CHANGELOG](https://github.com/dorny/paths-filter/blob/master/CHANGELOG.md)
 
-## Usage
+## Upstream usage reference
 
 ```yaml
 - uses: dorny/paths-filter@v3
@@ -217,7 +238,7 @@ For more information, see [CHANGELOG](https://github.com/dorny/paths-filter/blob
   unchanged; the action does not infer or invent commit SHAs for it.
 - `changes` - JSON array with names of all filters matching any of the changed files.
 
-## Examples
+## Upstream examples
 
 ### Conditional execution
 
