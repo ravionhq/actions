@@ -937,33 +937,34 @@ function getPushComparison(baseInput, refInput, token) {
 }
 exports.getPushComparison = getPushComparison;
 function getQueuePush(baseInput, refInput, token) {
-    var _a;
+    var _a, _b, _c, _d;
     if (github.context.eventName !== 'push' || !github.context.ref.startsWith(queueRefPrefix)) {
         return undefined;
     }
     maskSecret(token);
     const ref = github.context.ref;
-    const match = /^refs\/heads\/ravion\/merge-queue\/[A-Za-z0-9_-]{1,100}\/([0-9a-f]{40})$/.exec(ref);
+    const match = /^refs\/heads\/ravion\/merge-queue\/[A-Za-z0-9_-]{1,100}\/[0-9a-f]{40}$/.exec(ref);
     if (!match) {
         throw new Error(`Malformed merge queue ref '${ref}'`);
     }
-    const baseSha = match[1];
     const payload = github.context.payload;
     const { owner, repo } = github.context.repo;
     const serverUrl = github.context.serverUrl;
     const headSha = github.context.sha;
+    const headCommit = payload.head_commit;
+    const baseSha = (_c = (_b = (_a = headCommit === null || headCommit === void 0 ? void 0 : headCommit.parents) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.sha) !== null && _c !== void 0 ? _c : '';
     if (payload.deleted ||
         !shaPattern.test(baseSha) ||
         baseSha === nullSha ||
         !shaPattern.test(headSha) ||
         headSha === nullSha ||
         baseSha === headSha) {
-        throw new Error('Merge queue ref base and GITHUB_SHA must be distinct nonzero lowercase SHAs');
+        throw new Error('Merge queue candidate and its first parent must be distinct nonzero lowercase SHAs');
     }
     if (payload.ref !== ref || payload.after !== headSha || !shaPattern.test(payload.after)) {
         throw new Error('Merge queue ref, payload ref, payload after, and GITHUB_SHA must match');
     }
-    if (((_a = payload.repository) === null || _a === void 0 ? void 0 : _a.full_name) !== `${owner}/${repo}`) {
+    if (((_d = payload.repository) === null || _d === void 0 ? void 0 : _d.full_name) !== `${owner}/${repo}`) {
         throw new Error('Merge queue payload repository does not match the GitHub context repository');
     }
     if (baseInput && baseInput !== baseSha) {

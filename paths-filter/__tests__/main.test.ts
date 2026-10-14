@@ -57,6 +57,7 @@ interface GitFixture {
   remoteUrl: string
   remotePath: string
   base: string
+  candidateParent: string
   candidate: string
   unrelated: string
 }
@@ -223,7 +224,7 @@ describe('queue push comparison', () => {
     expect(git(checkout, 'rev-parse', '--is-shallow-repository').trim()).toBe('true')
     configureQueuePush()
     mockInputs['working-directory'] = checkout
-    mockInputs.base = fixture.base
+    mockInputs.base = fixture.candidateParent
     mockInputs.ref = fixture.candidate
     mockInputs.token = ''
     mockInputs['list-files'] = 'json'
@@ -237,12 +238,12 @@ docs:
     await run()
 
     expect(mockFailures).toEqual([])
-    expect(mockOutputs.source).toBe(true)
-    expect(mockOutputs.source_count).toBe(1)
-    expect(mockOutputs.source_files).toBe('["src/app.ts"]')
+    expect(mockOutputs.source).toBe(false)
+    expect(mockOutputs.source_count).toBe(0)
+    expect(mockOutputs.source_files).toBe('[]')
     expect(mockOutputs.docs).toBe(true)
     expect(mockOutputs.docs_count).toBe(1)
-    expect(mockOutputs.base_sha).toBe(fixture.base)
+    expect(mockOutputs.base_sha).toBe(fixture.candidateParent)
     expect(mockOutputs.head_sha).toBe(fixture.candidate)
     expect(mockContext.payload.before).toBe('0'.repeat(40))
     expect(mockGetOctokit).not.toHaveBeenCalled()
@@ -254,7 +255,7 @@ docs:
     await run()
 
     expect(mockFailures).toEqual([])
-    expect(mockOutputs.source).toBe(true)
+    expect(mockOutputs.source).toBe(false)
     expect(mockOutputs.docs).toBe(true)
     expect(mockOutputs).not.toHaveProperty('wrong')
   })
@@ -273,7 +274,7 @@ docs:
       await run()
 
       expect(mockFailures).toEqual([])
-      expect(mockOutputs.base_sha).toBe(fixture.base)
+      expect(mockOutputs.base_sha).toBe(fixture.candidateParent)
       expect(mockOutputs.head_sha).toBe(fixture.candidate)
       expect(mockOutputs.all).toBe(true)
     } finally {
@@ -303,7 +304,7 @@ docs:
     await run()
 
     expect(mockFailures).toEqual([])
-    expect(mockOutputs.source).toBe(true)
+    expect(mockOutputs.source).toBe(false)
     expect(mockOutputs.docs).toBe(true)
     expect(fs.readFileSync(path.join(checkout, '.git', 'config'), 'utf8')).toBe(checkoutConfig)
     expect(git(checkout, 'status', '--porcelain')).toBe(initialStatus)
@@ -323,8 +324,8 @@ docs:
 
     expect(mockFailures).toEqual([])
     expect(Object.prototype.hasOwnProperty.call(mockOutputs, '__proto__')).toBe(true)
-    expect(mockOutputs['__proto__']).toBe(true)
-    expect(mockOutputs.__proto___count).toBe(1)
+    expect(mockOutputs['__proto__']).toBe(false)
+    expect(mockOutputs.__proto___count).toBe(0)
   })
 
   test('masks the token and authorization header for a warm HTTPS checkout', async () => {
@@ -386,9 +387,9 @@ docs:
     }
 
     expect(mockFailures).toEqual([])
-    expect(mockOutputs.source).toBe(true)
+    expect(mockOutputs.source).toBe(false)
     expect(mockOutputs.docs).toBe(true)
-    expect(mockOutputs.base_sha).toBe(fixture.base)
+    expect(mockOutputs.base_sha).toBe(fixture.candidateParent)
     expect(mockOutputs.head_sha).toBe(fixture.candidate)
     expect(mockGetOctokit).not.toHaveBeenCalled()
     expect(fs.readdirSync(runnerTemp)).toEqual([])
@@ -492,7 +493,7 @@ docs:
     expect(mockOutputs).toEqual({})
   })
 
-  test('rejects a non-ancestor base', async () => {
+  test('ignores a non-ancestor queue ref suffix', async () => {
     const emptyWorkingDirectory = path.join(fixture.root, 'non-ancestor')
     fs.mkdirSync(emptyWorkingDirectory)
     configureQueuePush({base: fixture.unrelated})
@@ -502,19 +503,21 @@ docs:
 
     await run()
 
-    expect(mockFailures.join('\n')).toMatch(/ancestor/i)
-    expect(mockOutputs).toEqual({})
+    expect(mockFailures).toEqual([])
+    expect(mockOutputs.all).toBe(true)
+    expect(mockOutputs.base_sha).toBe(fixture.candidateParent)
   })
 
-  test('rejects a ref ending in the candidate SHA when it makes base and head equal', async () => {
+  test('ignores a queue ref suffix that does not describe the candidate parent', async () => {
     configureQueuePush({base: fixture.candidate})
+    mockInputs['working-directory'] = fs.mkdtempSync(path.join(fixture.root, 'suffix-'))
     mockInputs.token = ''
     mockInputs.filters = "all: '**'\n"
 
     await run()
 
-    expect(mockFailures.join('\n')).toMatch(/distinct nonzero lowercase SHAs/i)
-    expect(mockOutputs).toEqual({})
+    expect(mockFailures).toEqual([])
+    expect(mockOutputs.all).toBe(true)
   })
 
   test('rejects a checkout at the wrong commit before fetching', async () => {
@@ -604,6 +607,7 @@ function configureQueuePush(
     ref: overrides.payloadRef ?? ref,
     before: overrides.payloadBefore ?? '0'.repeat(40),
     after: payloadAfter,
+    head_commit: {id: githubSha, parents: [{sha: fixture.candidateParent}]},
     deleted: overrides.deleted ?? false,
     repository: {
       default_branch: 'main',
@@ -714,6 +718,7 @@ function createGitFixture(): GitFixture {
   git(source, 'add', '.')
   git(source, 'commit', '--quiet', '-m', 'add docs and filters')
   const candidate = git(source, 'rev-parse', 'HEAD').trim()
+  const candidateParent = git(source, 'rev-parse', `${candidate}^1`).trim()
   git(source, 'push', '--quiet', 'origin', 'HEAD:refs/heads/queue')
 
   git(source, 'checkout', '--quiet', '--orphan', 'unrelated')
@@ -734,6 +739,7 @@ function createGitFixture(): GitFixture {
     remoteUrl: pathToFileURL(remote),
     remotePath: remote,
     base,
+    candidateParent,
     candidate,
     unrelated
   }

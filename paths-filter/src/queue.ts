@@ -75,16 +75,22 @@ export function getQueuePush(baseInput: string, refInput: string, token: string)
 
   maskSecret(token)
   const ref = github.context.ref
-  const match = /^refs\/heads\/ravion\/merge-queue\/[A-Za-z0-9_-]{1,100}\/([0-9a-f]{40})$/.exec(ref)
+  const match = /^refs\/heads\/ravion\/merge-queue\/[A-Za-z0-9_-]{1,100}\/[0-9a-f]{40}$/.exec(ref)
   if (!match) {
     throw new Error(`Malformed merge queue ref '${ref}'`)
   }
 
-  const baseSha = match[1]
   const payload = github.context.payload as PushEvent
   const {owner, repo} = github.context.repo
   const serverUrl = github.context.serverUrl
   const headSha = github.context.sha
+  const headCommit = payload.head_commit as
+    | (typeof payload.head_commit & {
+        parents?: Array<{sha?: string}>
+      })
+    | null
+    | undefined
+  const baseSha = headCommit?.parents?.[0]?.sha ?? ''
 
   if (
     payload.deleted ||
@@ -94,7 +100,7 @@ export function getQueuePush(baseInput: string, refInput: string, token: string)
     headSha === nullSha ||
     baseSha === headSha
   ) {
-    throw new Error('Merge queue ref base and GITHUB_SHA must be distinct nonzero lowercase SHAs')
+    throw new Error('Merge queue candidate and its first parent must be distinct nonzero lowercase SHAs')
   }
   if (payload.ref !== ref || payload.after !== headSha || !shaPattern.test(payload.after)) {
     throw new Error('Merge queue ref, payload ref, payload after, and GITHUB_SHA must match')
