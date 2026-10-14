@@ -1046,7 +1046,7 @@ async function hasCommit(repository, sha, env) {
     const result = await (0, exec_1.getExecOutput)('git', ['-C', repository, 'cat-file', '-e', `${sha}^{commit}`], {
         silent: true,
         ignoreReturnCode: true,
-        env
+        env: { ...env, GIT_NO_LAZY_FETCH: '1' }
     });
     return result.exitCode === 0;
 }

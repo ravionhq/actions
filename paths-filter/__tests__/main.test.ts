@@ -332,7 +332,18 @@ docs:
     mockInputs.token = ''
     mockInputs.filters = '.github/filters.yml'
 
-    await run()
+    const originalPath = process.env.PATH
+    const recorder = createGitCommandRecorder()
+    process.env.PATH = `${recorder.directory}${path.delimiter}${originalPath ?? ''}`
+    try {
+      await run()
+    } finally {
+      if (originalPath === undefined) {
+        delete process.env.PATH
+      } else {
+        process.env.PATH = originalPath
+      }
+    }
 
     expect(mockFailures).toEqual([])
     expect(mockOutputs.source).toBe(true)
@@ -342,6 +353,11 @@ docs:
     expect(mockGetOctokit).not.toHaveBeenCalled()
     expect(fs.readdirSync(runnerTemp)).toEqual([])
     expect(fs.readdirSync(emptyWorkingDirectory)).toEqual([])
+    const fetchCommands = fs
+      .readFileSync(recorder.logPath, 'utf8')
+      .split(/\r?\n/)
+      .filter(line => line.includes(' fetch '))
+    expect(fetchCommands[0]).toContain('fetch --no-tags --filter=blob:none --depth=32 origin')
   })
 
   test.each([
@@ -601,6 +617,28 @@ function hasObjectWithoutLazyFetch(checkout: string, object: string): boolean {
   } catch {
     return false
   }
+}
+
+interface GitCommandRecorder {
+  directory: string
+  logPath: string
+}
+
+function createGitCommandRecorder(): GitCommandRecorder {
+  const directory = fs.mkdtempSync(path.join(fixture.root, 'git-recorder-'))
+  const logPath = path.join(directory, 'commands.log')
+  const realGit = (process.env.PATH ?? '')
+    .split(path.delimiter)
+    .map(entry => path.join(entry, 'git'))
+    .find(entry => fs.existsSync(entry))
+  if (!realGit) {
+    throw new Error('Git executable is not available on PATH')
+  }
+
+  const wrapper = path.join(directory, 'git')
+  fs.writeFileSync(wrapper, `#!/bin/sh\nprintf '%s\\n' "$*" >> "${logPath}"\nexec "${realGit}" "$@"\n`)
+  fs.chmodSync(wrapper, 0o755)
+  return {directory, logPath}
 }
 
 function createGitFixture(): GitFixture {

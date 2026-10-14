@@ -214,7 +214,7 @@ async function hasCommit(repository: string, sha: string, env: Record<string, st
   const result = await getExecOutput('git', ['-C', repository, 'cat-file', '-e', `${sha}^{commit}`], {
     silent: true,
     ignoreReturnCode: true,
-    env
+    env: {...env, GIT_NO_LAZY_FETCH: '1'}
   })
   return result.exitCode === 0
 }
