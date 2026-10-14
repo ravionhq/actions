@@ -14,6 +14,11 @@ describe('parsing output of the git diff command', () => {
     expect(files[2].filename).toBe('src/main.ts')
     expect(files[2].status).toBe(ChangeStatus.Deleted)
   })
+
+  test('parses a type change as modified', () => {
+    const files = git.parseGitDiffOutput('T\u0000src/tool\u0000')
+    expect(files).toEqual([{filename: 'src/tool', status: ChangeStatus.Modified}])
+  })
 })
 
 describe('git utility function tests (those not invoking git)', () => {

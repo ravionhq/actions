@@ -1,3 +1,4 @@
+import {execFileSync} from 'child_process'
 import {backslashEscape, shellEscape} from '../src/list-format/shell-escape'
 
 describe('escape() backslash escapes every character except subset of definitely safe characters', () => {
@@ -19,6 +20,15 @@ describe('escape() backslash escapes every character except subset of definitely
 
   test('$variables should be escaped', () => {
     expect(backslashEscape('$var')).toBe('\\$var')
+  })
+
+  test('literal LF is quoted and round-trips through the shell', () => {
+    const filename = 'first\nsecond file'
+    const escaped = backslashEscape(filename)
+    const output = execFileSync('bash', ['-c', `printf '%s' ${escaped}`], {encoding: 'utf8'})
+
+    expect(escaped).toBe("first'\n'second\\ file")
+    expect(output).toBe(filename)
   })
 })
 

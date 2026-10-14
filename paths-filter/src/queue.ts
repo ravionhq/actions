@@ -101,6 +101,9 @@ export async function getQueueChanges(queue: QueuePush, token: string, filterPat
   try {
     await runGit(temporaryRepository, ['init', '--bare', '--quiet'], gitEnv)
     await runGit(temporaryRepository, ['remote', 'add', 'origin', queue.remoteUrl], gitEnv)
+    await runGit(temporaryRepository, ['config', 'extensions.partialClone', 'origin'], gitEnv)
+    await runGit(temporaryRepository, ['config', 'remote.origin.promisor', 'true'], gitEnv)
+    await runGit(temporaryRepository, ['config', 'remote.origin.partialclonefilter', 'blob:none'], gitEnv)
     if (checkoutRepository) {
       configureCheckoutAlternates(temporaryRepository, checkoutRepository)
     }

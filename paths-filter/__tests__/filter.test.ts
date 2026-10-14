@@ -1,5 +1,6 @@
 import {Filter, FilterConfig, PredicateQuantifier} from '../src/filter'
 import {File, ChangeStatus} from '../src/file'
+import {parseGitDiffOutput} from '../src/git'
 
 describe('yaml filter parsing tests', () => {
   test('throws if yaml is not a dictionary', () => {
@@ -161,6 +162,27 @@ describe('matching tests', () => {
     const files = modified(['config/settings.yml'])
     const match = filter.match(files)
     expect(match.src).toEqual(files)
+  })
+
+  test('matches a type-change file with added or modified rules', () => {
+    const filter = new Filter(`
+    changed:
+      - added|modified: "src/**"
+    `)
+    const files = parseGitDiffOutput('T\u0000src/tool\u0000')
+    expect(filter.match(files).changed).toEqual(files)
+  })
+
+  test('matches and retains __proto__ as a filter result key', () => {
+    const filter = new Filter(`
+    "__proto__": "src/**"
+    `)
+    const files = modified(['src/app.ts'])
+    const matches = filter.match(files)
+
+    expect(Object.prototype.hasOwnProperty.call(filter.rules, '__proto__')).toBe(true)
+    expect(Object.prototype.hasOwnProperty.call(matches, '__proto__')).toBe(true)
+    expect(matches['__proto__']).toEqual(files)
   })
 })
 

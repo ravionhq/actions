@@ -70,7 +70,7 @@ export interface FilterResults {
 }
 
 export class Filter {
-  rules: {[key: string]: FilterRuleItem[]} = {}
+  rules: {[key: string]: FilterRuleItem[]} = Object.create(null)
 
   // Creates instance of Filter and load rules from YAML if it's provided
   constructor(yaml?: string, readonly filterConfig?: FilterConfig) {
@@ -96,7 +96,7 @@ export class Filter {
   }
 
   match(files: File[]): FilterResults {
-    const result: FilterResults = {}
+    const result: FilterResults = Object.create(null)
     for (const [key, patterns] of Object.entries(this.rules)) {
       result[key] = files.filter(file => this.isMatch(file, patterns))
     }

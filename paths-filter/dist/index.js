@@ -100,7 +100,7 @@ class Filter {
     // Creates instance of Filter and load rules from YAML if it's provided
     constructor(yaml, filterConfig) {
         this.filterConfig = filterConfig;
-        this.rules = {};
+        this.rules = Object.create(null);
         if (yaml) {
             this.load(yaml);
         }
@@ -119,7 +119,7 @@ class Filter {
         }
     }
     match(files) {
-        const result = {};
+        const result = Object.create(null);
         for (const [key, patterns] of Object.entries(this.rules)) {
             result[key] = files.filter(file => this.isMatch(file, patterns));
         }
@@ -454,6 +454,7 @@ const statusMap = {
     D: file_1.ChangeStatus.Deleted,
     M: file_1.ChangeStatus.Modified,
     R: file_1.ChangeStatus.Renamed,
+    T: file_1.ChangeStatus.Modified,
     U: file_1.ChangeStatus.Unmerged
 };
 
@@ -496,7 +497,9 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.shellEscape = exports.backslashEscape = void 0;
 // Backslash escape every character except small subset of definitely safe characters
 function backslashEscape(value) {
-    return value.replace(/([^a-zA-Z0-9,._+:@%/-])/gm, '\\$1');
+    return value.replace(/([^a-zA-Z0-9,._+:@%/-])/gm, character => {
+        return character === '\n' ? "'\n'" : `\\${character}`;
+    });
 }
 exports.backslashEscape = backslashEscape;
 // Returns filename escaped for usage as shell argument.
@@ -961,6 +964,9 @@ async function getQueueChanges(queue, token, filterPath) {
     try {
         await runGit(temporaryRepository, ['init', '--bare', '--quiet'], gitEnv);
         await runGit(temporaryRepository, ['remote', 'add', 'origin', queue.remoteUrl], gitEnv);
+        await runGit(temporaryRepository, ['config', 'extensions.partialClone', 'origin'], gitEnv);
+        await runGit(temporaryRepository, ['config', 'remote.origin.promisor', 'true'], gitEnv);
+        await runGit(temporaryRepository, ['config', 'remote.origin.partialclonefilter', 'blob:none'], gitEnv);
         if (checkoutRepository) {
             configureCheckoutAlternates(temporaryRepository, checkoutRepository);
         }

@@ -4,7 +4,7 @@ import * as path from 'path'
 import {execFileSync} from 'child_process'
 
 const mockInputs: Record<string, string> = {}
-const mockOutputs: Record<string, unknown> = {}
+const mockOutputs: Record<string, unknown> = Object.create(null)
 const mockFailures: string[] = []
 const mockWarnings: string[] = []
 const mockGetOctokit = jest.fn()
@@ -239,6 +239,52 @@ docs:
     } finally {
       fs.renameSync(unavailableRemote, fixture.remotePath)
     }
+  })
+
+  test('fetches a promised filter blob in a sparse partial clone without changing the checkout', async () => {
+    const checkout = clonePartialCheckout('queue-partial-checkout')
+    const filterBlob = git(checkout, 'ls-tree', fixture.candidate, '.github/filters.yml').trim().split(/\s+/)[2]
+    if (!filterBlob) {
+      throw new Error('Filter blob is missing from the candidate tree')
+    }
+    const checkoutConfig = fs.readFileSync(path.join(checkout, '.git', 'config'), 'utf8')
+    const initialStatus = git(checkout, 'status', '--porcelain')
+    const initialObjectStats = git(checkout, 'count-objects', '-v')
+
+    expect(hasObjectWithoutLazyFetch(checkout, fixture.base)).toBe(true)
+    expect(hasObjectWithoutLazyFetch(checkout, fixture.candidate)).toBe(true)
+    expect(fs.existsSync(path.join(checkout, '.github', 'filters.yml'))).toBe(false)
+    expect(hasObjectWithoutLazyFetch(checkout, filterBlob)).toBe(false)
+    configureQueuePush()
+    mockInputs['working-directory'] = checkout
+    mockInputs.token = ''
+    mockInputs.filters = '.github/filters.yml'
+
+    await run()
+
+    expect(mockFailures).toEqual([])
+    expect(mockOutputs.source).toBe(true)
+    expect(mockOutputs.docs).toBe(true)
+    expect(fs.readFileSync(path.join(checkout, '.git', 'config'), 'utf8')).toBe(checkoutConfig)
+    expect(git(checkout, 'status', '--porcelain')).toBe(initialStatus)
+    expect(git(checkout, 'count-objects', '-v')).toBe(initialObjectStats)
+    expect(hasObjectWithoutLazyFetch(checkout, filterBlob)).toBe(false)
+  })
+
+  test('emits an output for a __proto__ filter', async () => {
+    const emptyWorkingDirectory = path.join(fixture.root, 'proto-filter')
+    fs.mkdirSync(emptyWorkingDirectory)
+    configureQueuePush()
+    mockInputs['working-directory'] = emptyWorkingDirectory
+    mockInputs.token = ''
+    mockInputs.filters = '"__proto__": "src/**"\n'
+
+    await run()
+
+    expect(mockFailures).toEqual([])
+    expect(Object.prototype.hasOwnProperty.call(mockOutputs, '__proto__')).toBe(true)
+    expect(mockOutputs['__proto__']).toBe(true)
+    expect(mockOutputs.__proto___count).toBe(1)
   })
 
   test('masks the token and authorization header for a warm HTTPS checkout', async () => {
@@ -529,6 +575,34 @@ function cloneFullCheckout(name: string): string {
   return checkout
 }
 
+function clonePartialCheckout(name: string): string {
+  const checkout = path.join(fixture.root, name)
+  execFileSync('git', [
+    'clone',
+    '--quiet',
+    '--filter=blob:none',
+    '--sparse',
+    '--branch',
+    'queue',
+    fixture.remoteUrl,
+    checkout
+  ])
+  return checkout
+}
+
+function hasObjectWithoutLazyFetch(checkout: string, object: string): boolean {
+  try {
+    execFileSync('git', ['cat-file', '-e', object], {
+      cwd: checkout,
+      env: {...process.env, GIT_NO_LAZY_FETCH: '1'},
+      stdio: 'ignore'
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
 function createGitFixture(): GitFixture {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paths-filter-test-'))
   const serverRoot = path.join(root, 'server')
@@ -536,6 +610,7 @@ function createGitFixture(): GitFixture {
   const source = path.join(root, 'source')
   fs.mkdirSync(path.dirname(remote), {recursive: true})
   execFileSync('git', ['init', '--quiet', '--bare', remote])
+  git(remote, 'config', 'uploadpack.allowFilter', 'true')
   fs.mkdirSync(source)
   git(source, 'init', '--quiet', '--initial-branch=main')
   git(source, 'config', 'user.email', 'paths-filter@example.com')

@@ -1,6 +1,8 @@
 // Backslash escape every character except small subset of definitely safe characters
 export function backslashEscape(value: string): string {
-  return value.replace(/([^a-zA-Z0-9,._+:@%/-])/gm, '\\$1')
+  return value.replace(/([^a-zA-Z0-9,._+:@%/-])/gm, character => {
+    return character === '\n' ? "'\n'" : `\\${character}`
+  })
 }
 
 // Returns filename escaped for usage as shell argument.
