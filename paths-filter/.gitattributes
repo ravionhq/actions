@@ -1,0 +1,2 @@
+* text=auto eol=lf
+dist/index.js whitespace=-blank-at-eol
