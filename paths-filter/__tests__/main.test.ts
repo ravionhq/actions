@@ -103,7 +103,7 @@ beforeEach(() => {
 })
 
 describe('upstream event behavior', () => {
-  test('keeps pull request API rename handling and exports payload commit SHAs', async () => {
+  test.each(['feature', 'mergify/merge-queue/main/batch'])('keeps PR API behavior for %s', async headRef => {
     const base = '1111111111111111111111111111111111111111'
     const head = '2222222222222222222222222222222222222222'
     mockContext.eventName = 'pull_request'
@@ -113,7 +113,7 @@ describe('upstream event behavior', () => {
       pull_request: {
         number: 42,
         base: {sha: base},
-        head: {sha: head}
+        head: {sha: head, ref: headRef}
       },
       repository: {default_branch: 'main'}
     }
@@ -174,6 +174,46 @@ source:
     expect(mockOutputs.source_count).toBe(1)
     expect(mockOutputs).not.toHaveProperty('base_sha')
     expect(mockOutputs).not.toHaveProperty('head_sha')
+  })
+})
+
+describe('ordinary default-branch pushes', () => {
+  test.each(['checkout', 'no-checkout'])('compares the full push with %s', async mode => {
+    const directory =
+      mode === 'checkout'
+        ? cloneCheckout('normal-push', 'queue')
+        : fs.mkdtempSync(path.join(fixture.root, 'normal-push-'))
+    configureQueuePush({ref: 'refs/heads/main', payloadBefore: fixture.base})
+    mockInputs['working-directory'] = directory
+    mockInputs.filters = '.github/filters.yml'
+    await run()
+    expect(mockFailures).toEqual([])
+    // The source file changed before the final commit of this push.
+    expect(mockOutputs.source).toBe(true)
+    expect(mockOutputs.docs).toBe(true)
+    expect(mockOutputs.base_sha).toBe(fixture.base)
+    expect(mockOutputs.head_sha).toBe(fixture.candidate)
+    expect(mockGetOctokit).not.toHaveBeenCalled()
+    if (mode === 'checkout') expect(git(directory, 'rev-parse', 'HEAD').trim()).toBe(fixture.candidate)
+  })
+
+  test('supports non-ancestor before commits without weakening queue ancestry checks', async () => {
+    configureQueuePush({ref: 'refs/heads/main', payloadBefore: fixture.unrelated})
+    mockInputs['working-directory'] = fs.mkdtempSync(path.join(fixture.root, 'force-push-'))
+    mockInputs.filters = "removed: 'unrelated.txt'\nsource: 'src/**'\n"
+    await run()
+    expect(mockFailures).toEqual([])
+    expect(mockOutputs.removed).toBe(true)
+    expect(mockOutputs.source).toBe(true)
+    expect(mockOutputs.base_sha).toBe(fixture.unrelated)
+  })
+
+  test('rejects a mismatched push head without emitting successful filters', async () => {
+    configureQueuePush({ref: 'refs/heads/main', payloadBefore: fixture.base, payloadAfter: fixture.unrelated})
+    mockInputs.filters = "all: '**'\n"
+    await run()
+    expect(mockFailures.join('\n')).toContain('Push comparison requires matching')
+    expect(mockOutputs).toEqual({})
   })
 })
 

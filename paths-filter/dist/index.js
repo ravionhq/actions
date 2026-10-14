@@ -577,7 +577,7 @@ async function run() {
         const ref = core.getInput('ref', { required: false });
         const base = core.getInput('base', { required: false });
         const filtersInput = core.getInput('filters', { required: true });
-        const queuePush = queue.getQueuePush(base, ref, token);
+        const queuePush = queue.getPushComparison(base, ref, token);
         let filtersYaml = filtersInput;
         let files;
         if (queuePush) {
@@ -888,7 +888,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getQueueChanges = exports.getQueuePush = void 0;
+exports.getQueueChanges = exports.getQueuePush = exports.getPushComparison = void 0;
 const fs = __importStar(__nccwpck_require__(7147));
 const os = __importStar(__nccwpck_require__(2037));
 const path = __importStar(__nccwpck_require__(1017));
@@ -899,6 +899,43 @@ const git_1 = __nccwpck_require__(3374);
 const queueRefPrefix = 'refs/heads/ravion/merge-queue';
 const shaPattern = /^[0-9a-f]{40}$/;
 const nullSha = '0000000000000000000000000000000000000000';
+// Default-branch pushes compare the complete push, not just the final commit.
+function getPushComparison(baseInput, refInput, token) {
+    var _a;
+    const queued = getQueuePush(baseInput, refInput, token);
+    if (queued)
+        return queued;
+    const payload = github.context.payload;
+    if (github.context.eventName !== 'push' ||
+        baseInput ||
+        refInput ||
+        !((_a = payload.repository) === null || _a === void 0 ? void 0 : _a.default_branch) ||
+        github.context.ref !== `refs/heads/${payload.repository.default_branch}` ||
+        payload.before === nullSha) {
+        return undefined;
+    }
+    maskSecret(token);
+    const { owner, repo } = github.context.repo;
+    const { ref, sha: headSha, serverUrl } = github.context;
+    if (payload.deleted ||
+        payload.ref !== ref ||
+        payload.after !== headSha ||
+        !shaPattern.test(payload.before) ||
+        !shaPattern.test(headSha) ||
+        headSha === nullSha ||
+        payload.repository.full_name !== `${owner}/${repo}`) {
+        throw new Error('Push comparison requires matching repository, ref, and valid before/after commits');
+    }
+    return {
+        baseSha: payload.before,
+        headSha,
+        ref,
+        serverUrl,
+        remoteUrl: getTrustedRemoteUrl(serverUrl, owner, repo, token),
+        requireAncestor: false
+    };
+}
+exports.getPushComparison = getPushComparison;
 function getQueuePush(baseInput, refInput, token) {
     var _a;
     if (github.context.eventName !== 'push' || !github.context.ref.startsWith(queueRefPrefix)) {
@@ -987,6 +1024,15 @@ exports.getQueueChanges = getQueueChanges;
 async function acquireQueueCommits(repository, queue, env) {
     const hasBase = await hasCommit(repository, queue.baseSha, env);
     const hasHead = await hasCommit(repository, queue.headSha, env);
+    if (queue.requireAncestor === false) {
+        if (!hasBase || !hasHead) {
+            await runGit(repository, ['fetch', '--no-tags', '--filter=blob:none', '--depth=1', 'origin', queue.baseSha, queue.headSha], env);
+        }
+        if (!(await hasCommit(repository, queue.baseSha, env)) || !(await hasCommit(repository, queue.headSha, env))) {
+            throw new Error('Could not fetch the exact push before and after commits');
+        }
+        return;
+    }
     const shallow = (await runGit(repository, ['rev-parse', '--is-shallow-repository'], env)).trim() === 'true';
     if (hasBase && hasHead) {
         if (await isAncestor(repository, queue.baseSha, queue.headSha, env)) {

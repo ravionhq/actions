@@ -31,7 +31,7 @@ export async function run(): Promise<void> {
     const ref = core.getInput('ref', {required: false})
     const base = core.getInput('base', {required: false})
     const filtersInput = core.getInput('filters', {required: true})
-    const queuePush = queue.getQueuePush(base, ref, token)
+    const queuePush = queue.getPushComparison(base, ref, token)
     let filtersYaml = filtersInput
     let files: File[]
     if (queuePush) {

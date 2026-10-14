@@ -33,6 +33,10 @@ don't allow this because they don't work on a level of individual jobs or steps.
   - The `base` input parameter must not be the same as the branch that triggered the workflow
   - Changes are detected against the merge-base with the configured base branch or the default branch
   - Uses git commands to detect changes - repository must be already [checked out](https://github.com/actions/checkout)
+- **Default-branch pushes without `base` or `ref`:**
+  - Compares the complete push from the event's `before` commit to `GITHUB_SHA`
+  - Works with or without a checkout; a non-ancestor `before` commit is supported
+  - Exposes the compared commits as `base_sha` and `head_sha`
 - **Master, Release, or other long-lived branches:**
   - Workflow triggered by **[push](https://docs.github.com/en/actions/reference/events-that-trigger-workflows#push)** event
   when `base` input parameter is the same as the branch that triggered the workflow:
@@ -231,11 +235,12 @@ For more information, see [CHANGELOG](https://github.com/dorny/paths-filter/blob
   - `'false'` - if **none** of changed files matches any of filter rules
 - For each filter, it sets an output variable with the name `${FILTER_NAME}_count` to the count of matching files.
 - If enabled, for each filter it sets an output variable with the name `${FILTER_NAME}_files`. It will contain a list of all files matching the filter.
-- The reserved `base_sha` and `head_sha` outputs contain the pull request base/head SHAs or
-  the validated merge queue base/candidate SHAs. Filters cannot use those names.
-- These commit outputs are not set for manual dispatch or other events when the action
-  cannot identify a trustworthy base/head pair. Normal dispatch comparison behavior is
-  unchanged; the action does not infer or invent commit SHAs for it.
+- The reserved `base_sha` and `head_sha` outputs contain the pull request base/head SHAs,
+  validated merge queue base/candidate SHAs, or default-branch push before/after SHAs.
+  Filters cannot use those names.
+- These commit outputs are not set for manual dispatch, initial default-branch pushes, or
+  other events when the action cannot identify a trustworthy base/head pair. Normal dispatch
+  comparison behavior is unchanged; the action does not infer or invent commit SHAs for it.
 - `changes` - JSON array with names of all filters matching any of the changed files.
 
 ## Upstream examples

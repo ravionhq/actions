@@ -19,11 +19,53 @@ export interface QueuePush {
   ref: string
   remoteUrl: string
   serverUrl: string
+  requireAncestor?: boolean
 }
 
 export interface QueueChanges {
   files: File[]
   filterContent?: string
+}
+
+// Default-branch pushes compare the complete push, not just the final commit.
+export function getPushComparison(baseInput: string, refInput: string, token: string): QueuePush | undefined {
+  const queued = getQueuePush(baseInput, refInput, token)
+  if (queued) return queued
+
+  const payload = github.context.payload as PushEvent
+  if (
+    github.context.eventName !== 'push' ||
+    baseInput ||
+    refInput ||
+    !payload.repository?.default_branch ||
+    github.context.ref !== `refs/heads/${payload.repository.default_branch}` ||
+    payload.before === nullSha
+  ) {
+    return undefined
+  }
+
+  maskSecret(token)
+  const {owner, repo} = github.context.repo
+  const {ref, sha: headSha, serverUrl} = github.context
+  if (
+    payload.deleted ||
+    payload.ref !== ref ||
+    payload.after !== headSha ||
+    !shaPattern.test(payload.before) ||
+    !shaPattern.test(headSha) ||
+    headSha === nullSha ||
+    payload.repository.full_name !== `${owner}/${repo}`
+  ) {
+    throw new Error('Push comparison requires matching repository, ref, and valid before/after commits')
+  }
+  return {
+    baseSha: payload.before,
+    headSha,
+    ref,
+    serverUrl,
+    remoteUrl: getTrustedRemoteUrl(serverUrl, owner, repo, token),
+    requireAncestor: false
+  }
 }
 
 export function getQueuePush(baseInput: string, refInput: string, token: string): QueuePush | undefined {
@@ -134,6 +176,19 @@ interface CheckoutRepository {
 async function acquireQueueCommits(repository: string, queue: QueuePush, env: Record<string, string>): Promise<void> {
   const hasBase = await hasCommit(repository, queue.baseSha, env)
   const hasHead = await hasCommit(repository, queue.headSha, env)
+  if (queue.requireAncestor === false) {
+    if (!hasBase || !hasHead) {
+      await runGit(
+        repository,
+        ['fetch', '--no-tags', '--filter=blob:none', '--depth=1', 'origin', queue.baseSha, queue.headSha],
+        env
+      )
+    }
+    if (!(await hasCommit(repository, queue.baseSha, env)) || !(await hasCommit(repository, queue.headSha, env))) {
+      throw new Error('Could not fetch the exact push before and after commits')
+    }
+    return
+  }
   const shallow = (await runGit(repository, ['rev-parse', '--is-shallow-repository'], env)).trim() === 'true'
 
   if (hasBase && hasHead) {
