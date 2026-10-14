@@ -34,6 +34,7 @@ export async function run(): Promise<void> {
     const queuePush = queue.getPushComparison(base, ref, token)
     let filtersYaml = filtersInput
     let files: File[]
+    let forceAll = false
     if (queuePush) {
       const queueChanges = await queue.getQueueChanges(
         queuePush,
@@ -42,6 +43,7 @@ export async function run(): Promise<void> {
       )
       filtersYaml = queueChanges.filterContent ?? filtersInput
       files = queueChanges.files
+      forceAll = queueChanges.forceAll ?? false
     } else {
       filtersYaml = isPathInput(filtersInput) ? getConfigFileContent(filtersInput) : filtersInput
       files = []
@@ -75,7 +77,12 @@ export async function run(): Promise<void> {
     }
     core.info(`Detected ${files.length} changed files`)
     const results = filter.match(files)
-    exportResults(results, listFiles)
+    if (forceAll) {
+      for (const key of Object.keys(filter.rules)) {
+        results[key] = files
+      }
+    }
+    exportResults(results, listFiles, forceAll)
     exportCommitOutputs(queuePush)
   } catch (error) {
     core.setFailed(getErrorMessage(error))
@@ -252,11 +259,11 @@ async function getChangedFilesFromApi(token: string, pullRequest: PullRequestEve
   }
 }
 
-function exportResults(results: FilterResults, format: ExportFormat): void {
+function exportResults(results: FilterResults, format: ExportFormat, forceAll = false): void {
   core.info('Results:')
   const changes = []
   for (const [key, files] of Object.entries(results)) {
-    const value = files.length > 0
+    const value = forceAll || files.length > 0
     core.startGroup(`Filter ${key} = ${value}`)
     if (files.length > 0) {
       changes.push(key)
@@ -288,7 +295,9 @@ function exportResults(results: FilterResults, format: ExportFormat): void {
 
 function exportCommitOutputs(queuePush: queue.QueuePush | undefined): void {
   if (queuePush) {
-    core.setOutput('base_sha', queuePush.baseSha)
+    if (queuePush.baseSha) {
+      core.setOutput('base_sha', queuePush.baseSha)
+    }
     core.setOutput('head_sha', queuePush.headSha)
     return
   }

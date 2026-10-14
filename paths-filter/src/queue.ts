@@ -6,7 +6,7 @@ import * as core from '@actions/core'
 import * as github from '@actions/github'
 import {PushEvent} from '@octokit/webhooks-types'
 
-import {File} from './file'
+import {ChangeStatus, File} from './file'
 import {parseGitDiffOutput} from './git'
 
 const queueRefPrefix = 'refs/heads/ravion/merge-queue'
@@ -20,11 +20,13 @@ export interface QueuePush {
   remoteUrl: string
   serverUrl: string
   requireAncestor?: boolean
+  forceAll?: boolean
 }
 
 export interface QueueChanges {
   files: File[]
   filterContent?: string
+  forceAll?: boolean
 }
 
 // Default-branch pushes compare the complete push, not just the final commit.
@@ -92,23 +94,17 @@ export function getQueuePush(baseInput: string, refInput: string, token: string)
     | undefined
   const baseSha = headCommit?.parents?.[0]?.sha ?? ''
 
-  if (
-    payload.deleted ||
-    !shaPattern.test(baseSha) ||
-    baseSha === nullSha ||
-    !shaPattern.test(headSha) ||
-    headSha === nullSha ||
-    baseSha === headSha
-  ) {
+  if (payload.deleted || !shaPattern.test(headSha) || headSha === nullSha) {
     throw new Error('Merge queue candidate and its first parent must be distinct nonzero lowercase SHAs')
   }
+  const forceAll = !shaPattern.test(baseSha) || baseSha === nullSha || baseSha === headSha
   if (payload.ref !== ref || payload.after !== headSha || !shaPattern.test(payload.after)) {
     throw new Error('Merge queue ref, payload ref, payload after, and GITHUB_SHA must match')
   }
   if (payload.repository?.full_name !== `${owner}/${repo}`) {
     throw new Error('Merge queue payload repository does not match the GitHub context repository')
   }
-  if (baseInput && baseInput !== baseSha) {
+  if (!forceAll && baseInput && baseInput !== baseSha) {
     throw new Error(`'base' input conflicts with pinned queue base ${baseSha}`)
   }
   if (refInput && refInput !== ref && refInput !== headSha) {
@@ -116,7 +112,7 @@ export function getQueuePush(baseInput: string, refInput: string, token: string)
   }
 
   const remoteUrl = getTrustedRemoteUrl(serverUrl, owner, repo, token)
-  return {baseSha, headSha, ref, remoteUrl, serverUrl}
+  return {baseSha: forceAll ? '' : baseSha, headSha, ref, remoteUrl, serverUrl, forceAll}
 }
 
 export async function getQueueChanges(queue: QueuePush, token: string, filterPath?: string): Promise<QueueChanges> {
@@ -155,15 +151,36 @@ export async function getQueueChanges(queue: QueuePush, token: string, filterPat
     if (checkoutRepository) {
       configureCheckoutAlternates(temporaryRepository, checkoutRepository)
     }
-    await acquireQueueCommits(temporaryRepository, queue, gitEnv)
+    let forceAll = queue.forceAll ?? false
+    await acquireQueueHead(temporaryRepository, queue.headSha, gitEnv)
+    if (!forceAll) {
+      if (queue.requireAncestor !== false) {
+        const commit = await runGit(temporaryRepository, ['cat-file', 'commit', queue.headSha], gitEnv)
+        const firstParent = /^parent ([0-9a-f]{40})$/m.exec(commit)?.[1]
+        forceAll = firstParent !== queue.baseSha
+      }
+      if (!forceAll) {
+        await acquireQueueCommits(temporaryRepository, queue, gitEnv)
+      }
+    }
+    if (forceAll) {
+      queue.forceAll = true
+      queue.baseSha = ''
+    }
 
-    const filesOutput = await runGit(
-      temporaryRepository,
-      ['diff', '--no-renames', '--name-status', '-z', `${queue.baseSha}..${queue.headSha}`],
-      gitEnv
-    )
-
-    const changes: QueueChanges = {files: parseGitDiffOutput(filesOutput)}
+    const files = forceAll
+      ? (await runGit(temporaryRepository, ['ls-tree', '-r', '--name-only', '-z', queue.headSha], gitEnv))
+          .split('\0')
+          .filter(Boolean)
+          .map(filename => ({filename, status: ChangeStatus.Added}))
+      : parseGitDiffOutput(
+          await runGit(
+            temporaryRepository,
+            ['diff', '--no-renames', '--name-status', '-z', `${queue.baseSha}..${queue.headSha}`],
+            gitEnv
+          )
+        )
+    const changes: QueueChanges = {files, forceAll}
     if (filterPath) {
       const candidatePath = getRepositoryPath(configPrefix, filterPath)
       changes.filterContent = await runGit(temporaryRepository, ['show', `${queue.headSha}:${candidatePath}`], gitEnv)
@@ -171,6 +188,15 @@ export async function getQueueChanges(queue: QueuePush, token: string, filterPat
     return changes
   } finally {
     fs.rmSync(temporaryRepository, {recursive: true, force: true})
+  }
+}
+
+async function acquireQueueHead(repository: string, headSha: string, env: Record<string, string>): Promise<void> {
+  if (!(await hasCommit(repository, headSha, env))) {
+    await runGit(repository, ['fetch', '--no-tags', '--filter=blob:none', '--depth=1', 'origin', headSha], env)
+  }
+  if (!(await hasCommit(repository, headSha, env))) {
+    throw new Error('Could not fetch the exact merge queue candidate commit')
   }
 }
 

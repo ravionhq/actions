@@ -567,7 +567,7 @@ const shell_escape_1 = __nccwpck_require__(4613);
 const csv_escape_1 = __nccwpck_require__(7402);
 const queue = __importStar(__nccwpck_require__(7065));
 async function run() {
-    var _a;
+    var _a, _b;
     try {
         const workingDirectory = core.getInput('working-directory', { required: false });
         if (workingDirectory) {
@@ -580,10 +580,12 @@ async function run() {
         const queuePush = queue.getPushComparison(base, ref, token);
         let filtersYaml = filtersInput;
         let files;
+        let forceAll = false;
         if (queuePush) {
             const queueChanges = await queue.getQueueChanges(queuePush, token, isPathInput(filtersInput) ? filtersInput : undefined);
             filtersYaml = (_a = queueChanges.filterContent) !== null && _a !== void 0 ? _a : filtersInput;
             files = queueChanges.files;
+            forceAll = (_b = queueChanges.forceAll) !== null && _b !== void 0 ? _b : false;
         }
         else {
             filtersYaml = isPathInput(filtersInput) ? getConfigFileContent(filtersInput) : filtersInput;
@@ -613,7 +615,12 @@ async function run() {
         }
         core.info(`Detected ${files.length} changed files`);
         const results = filter.match(files);
-        exportResults(results, listFiles);
+        if (forceAll) {
+            for (const key of Object.keys(filter.rules)) {
+                results[key] = files;
+            }
+        }
+        exportResults(results, listFiles, forceAll);
         exportCommitOutputs(queuePush);
     }
     catch (error) {
@@ -768,11 +775,11 @@ async function getChangedFilesFromApi(token, pullRequest) {
         core.endGroup();
     }
 }
-function exportResults(results, format) {
+function exportResults(results, format, forceAll = false) {
     core.info('Results:');
     const changes = [];
     for (const [key, files] of Object.entries(results)) {
-        const value = files.length > 0;
+        const value = forceAll || files.length > 0;
         core.startGroup(`Filter ${key} = ${value}`);
         if (files.length > 0) {
             changes.push(key);
@@ -803,7 +810,9 @@ function exportResults(results, format) {
 }
 function exportCommitOutputs(queuePush) {
     if (queuePush) {
-        core.setOutput('base_sha', queuePush.baseSha);
+        if (queuePush.baseSha) {
+            core.setOutput('base_sha', queuePush.baseSha);
+        }
         core.setOutput('head_sha', queuePush.headSha);
         return;
     }
@@ -895,6 +904,7 @@ const path = __importStar(__nccwpck_require__(1017));
 const exec_1 = __nccwpck_require__(1514);
 const core = __importStar(__nccwpck_require__(2186));
 const github = __importStar(__nccwpck_require__(5438));
+const file_1 = __nccwpck_require__(4014);
 const git_1 = __nccwpck_require__(3374);
 const queueRefPrefix = 'refs/heads/ravion/merge-queue';
 const shaPattern = /^[0-9a-f]{40}$/;
@@ -953,31 +963,28 @@ function getQueuePush(baseInput, refInput, token) {
     const headSha = github.context.sha;
     const headCommit = payload.head_commit;
     const baseSha = (_c = (_b = (_a = headCommit === null || headCommit === void 0 ? void 0 : headCommit.parents) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.sha) !== null && _c !== void 0 ? _c : '';
-    if (payload.deleted ||
-        !shaPattern.test(baseSha) ||
-        baseSha === nullSha ||
-        !shaPattern.test(headSha) ||
-        headSha === nullSha ||
-        baseSha === headSha) {
+    if (payload.deleted || !shaPattern.test(headSha) || headSha === nullSha) {
         throw new Error('Merge queue candidate and its first parent must be distinct nonzero lowercase SHAs');
     }
+    const forceAll = !shaPattern.test(baseSha) || baseSha === nullSha || baseSha === headSha;
     if (payload.ref !== ref || payload.after !== headSha || !shaPattern.test(payload.after)) {
         throw new Error('Merge queue ref, payload ref, payload after, and GITHUB_SHA must match');
     }
     if (((_d = payload.repository) === null || _d === void 0 ? void 0 : _d.full_name) !== `${owner}/${repo}`) {
         throw new Error('Merge queue payload repository does not match the GitHub context repository');
     }
-    if (baseInput && baseInput !== baseSha) {
+    if (!forceAll && baseInput && baseInput !== baseSha) {
         throw new Error(`'base' input conflicts with pinned queue base ${baseSha}`);
     }
     if (refInput && refInput !== ref && refInput !== headSha) {
         throw new Error(`'ref' input conflicts with pinned queue ref ${ref}`);
     }
     const remoteUrl = getTrustedRemoteUrl(serverUrl, owner, repo, token);
-    return { baseSha, headSha, ref, remoteUrl, serverUrl };
+    return { baseSha: forceAll ? '' : baseSha, headSha, ref, remoteUrl, serverUrl, forceAll };
 }
 exports.getQueuePush = getQueuePush;
 async function getQueueChanges(queue, token, filterPath) {
+    var _a, _b;
     const workingDirectory = process.cwd();
     let configPrefix = '';
     let checkoutRepository;
@@ -1008,9 +1015,29 @@ async function getQueueChanges(queue, token, filterPath) {
         if (checkoutRepository) {
             configureCheckoutAlternates(temporaryRepository, checkoutRepository);
         }
-        await acquireQueueCommits(temporaryRepository, queue, gitEnv);
-        const filesOutput = await runGit(temporaryRepository, ['diff', '--no-renames', '--name-status', '-z', `${queue.baseSha}..${queue.headSha}`], gitEnv);
-        const changes = { files: (0, git_1.parseGitDiffOutput)(filesOutput) };
+        let forceAll = (_a = queue.forceAll) !== null && _a !== void 0 ? _a : false;
+        await acquireQueueHead(temporaryRepository, queue.headSha, gitEnv);
+        if (!forceAll) {
+            if (queue.requireAncestor !== false) {
+                const commit = await runGit(temporaryRepository, ['cat-file', 'commit', queue.headSha], gitEnv);
+                const firstParent = (_b = /^parent ([0-9a-f]{40})$/m.exec(commit)) === null || _b === void 0 ? void 0 : _b[1];
+                forceAll = firstParent !== queue.baseSha;
+            }
+            if (!forceAll) {
+                await acquireQueueCommits(temporaryRepository, queue, gitEnv);
+            }
+        }
+        if (forceAll) {
+            queue.forceAll = true;
+            queue.baseSha = '';
+        }
+        const files = forceAll
+            ? (await runGit(temporaryRepository, ['ls-tree', '-r', '--name-only', '-z', queue.headSha], gitEnv))
+                .split('\0')
+                .filter(Boolean)
+                .map(filename => ({ filename, status: file_1.ChangeStatus.Added }))
+            : (0, git_1.parseGitDiffOutput)(await runGit(temporaryRepository, ['diff', '--no-renames', '--name-status', '-z', `${queue.baseSha}..${queue.headSha}`], gitEnv));
+        const changes = { files, forceAll };
         if (filterPath) {
             const candidatePath = getRepositoryPath(configPrefix, filterPath);
             changes.filterContent = await runGit(temporaryRepository, ['show', `${queue.headSha}:${candidatePath}`], gitEnv);
@@ -1022,6 +1049,14 @@ async function getQueueChanges(queue, token, filterPath) {
     }
 }
 exports.getQueueChanges = getQueueChanges;
+async function acquireQueueHead(repository, headSha, env) {
+    if (!(await hasCommit(repository, headSha, env))) {
+        await runGit(repository, ['fetch', '--no-tags', '--filter=blob:none', '--depth=1', 'origin', headSha], env);
+    }
+    if (!(await hasCommit(repository, headSha, env))) {
+        throw new Error('Could not fetch the exact merge queue candidate commit');
+    }
+}
 async function acquireQueueCommits(repository, queue, env) {
     const hasBase = await hasCommit(repository, queue.baseSha, env);
     const hasHead = await hasCommit(repository, queue.headSha, env);

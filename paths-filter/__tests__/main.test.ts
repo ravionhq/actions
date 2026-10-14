@@ -398,7 +398,9 @@ docs:
       .readFileSync(recorder.logPath, 'utf8')
       .split(/\r?\n/)
       .filter(line => line.includes(' fetch '))
-    expect(fetchCommands[0]).toContain('fetch --no-tags --filter=blob:none --depth=32 origin')
+    expect(
+      fetchCommands.some(command => command.includes('fetch --no-tags --filter=blob:none --depth=32 origin'))
+    ).toBe(true)
   })
 
   test.each([
@@ -493,31 +495,42 @@ docs:
     expect(mockOutputs).toEqual({})
   })
 
-  test('ignores a non-ancestor queue ref suffix', async () => {
+  test('runs every filter when the candidate first parent is not an ancestor', async () => {
     const emptyWorkingDirectory = path.join(fixture.root, 'non-ancestor')
     fs.mkdirSync(emptyWorkingDirectory)
-    configureQueuePush({base: fixture.unrelated})
+    configureQueuePush({parentSha: fixture.unrelated})
     mockInputs['working-directory'] = emptyWorkingDirectory
     mockInputs.token = ''
-    mockInputs.filters = "all: '**'\n"
+    mockInputs.filters = "all: '**'\nmissing: 'does-not-exist/**'\n"
 
     await run()
 
     expect(mockFailures).toEqual([])
     expect(mockOutputs.all).toBe(true)
-    expect(mockOutputs.base_sha).toBe(fixture.candidateParent)
+    expect(mockOutputs.missing).toBe(true)
+    expect(mockOutputs.base_sha).toBeUndefined()
   })
 
-  test('ignores a queue ref suffix that does not describe the candidate parent', async () => {
-    configureQueuePush({base: fixture.candidate})
-    mockInputs['working-directory'] = fs.mkdtempSync(path.join(fixture.root, 'suffix-'))
+  test.each([
+    ['missing', undefined, true, false],
+    ['malformed', 'not-a-sha', false, false],
+    ['zero', '0'.repeat(40), false, false],
+    ['same as candidate', undefined, false, true]
+  ])('runs every filter when the first parent is %s', async (_name, parentSha, missingParent, candidateParent) => {
+    configureQueuePush({
+      parentSha: candidateParent ? fixture.candidate : parentSha,
+      omitParent: missingParent
+    })
+    mockInputs['working-directory'] = fs.mkdtempSync(path.join(fixture.root, 'invalid-parent-'))
     mockInputs.token = ''
-    mockInputs.filters = "all: '**'\n"
+    mockInputs.filters = "all: '**'\nmissing: 'does-not-exist/**'\n"
 
     await run()
 
     expect(mockFailures).toEqual([])
     expect(mockOutputs.all).toBe(true)
+    expect(mockOutputs.missing).toBe(true)
+    expect(mockOutputs.base_sha).toBeUndefined()
   })
 
   test('rejects a checkout at the wrong commit before fetching', async () => {
@@ -590,6 +603,8 @@ function configureQueuePush(
     payloadAfter?: string
     payloadBefore?: string
     payloadRef?: string
+    parentSha?: string
+    omitParent?: boolean
     repositoryFullName?: string
     deleted?: boolean
     serverUrl?: string
@@ -607,7 +622,9 @@ function configureQueuePush(
     ref: overrides.payloadRef ?? ref,
     before: overrides.payloadBefore ?? '0'.repeat(40),
     after: payloadAfter,
-    head_commit: {id: githubSha, parents: [{sha: fixture.candidateParent}]},
+    head_commit: overrides.omitParent
+      ? {id: githubSha}
+      : {id: githubSha, parents: [{sha: overrides.parentSha ?? fixture.candidateParent}]},
     deleted: overrides.deleted ?? false,
     repository: {
       default_branch: 'main',
