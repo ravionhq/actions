@@ -3,7 +3,7 @@
 [GitHub Action](https://github.com/features/actions) that enables conditional execution of workflow steps and jobs, based on the files modified by pull request, on a feature
 branch, or by the recently pushed commits.
 
-This is a native GitHub Action (`action.yml`, Node 20), not a Flightcontrol runner
+This is a native GitHub Action (`action.yml`, Node 24), not a Flightcontrol runner
 installer action. It is a Ravion-maintained fork of
 [`dorny/paths-filter`](https://github.com/dorny/paths-filter), based on upstream commit
 [`0e4a8c6effa4802afeda77dc8d303f8176d7dfad`](https://github.com/dorny/paths-filter/commit/0e4a8c6effa4802afeda77dc8d303f8176d7dfad).

@@ -1,11 +1,11 @@
 name: Setup Node.js
-description: Install a specific Node.js version (major like 20 or exact like 20.11.1)
+description: Install a specific Node.js version (major like 24 or exact like 24.22.1)
 
 inputs:
   node-version:
-    description: Node.js version to install (major like 20 or exact like 20.11.1)
+    description: Node.js version to install (major like 24 or exact like 24.22.1)
     required: false
-    default: "20"
+    default: "24"
 
 dependencyTemplates:
   - name: node
