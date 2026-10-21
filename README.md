@@ -15,7 +15,7 @@ Installs Node.js with npm support.
       "type": "uses",
       "uses": "node",
       "with": {
-        "node-version": "18"
+        "node-version": "24"
       }
     },
     {
@@ -26,7 +26,7 @@ Installs Node.js with npm support.
 }
 ```
 
-**Supported versions:** major like 20 or exact like 20.11.1 (installs the newest matching official Node.js release)
+**Supported versions:** major like 24 or exact like 24.22.1 (installs the newest matching official Node.js release)
 
 ### 2. Python (`python`)
 Installs Python with pip support.
@@ -197,7 +197,7 @@ You can combine multiple actions in a single workflow:
       "type": "uses",
       "uses": "node",
       "with": {
-        "node-version": "18"
+        "node-version": "24"
       }
     },
     {

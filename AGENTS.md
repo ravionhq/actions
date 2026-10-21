@@ -72,12 +72,12 @@ Use `${{ inputs.param-name }}` syntax to reference input parameters in dependenc
 ```yaml
 inputs:
   node-version:
-    default: "20"
+    default: "24"
 
 dependencyTemplates:
   - name: node
-    package: nodejs${{ inputs.node-version }}  # Becomes: nodejs20
-    version: ${{ inputs.node-version }}        # Becomes: 20
+    package: nodejs${{ inputs.node-version }}  # Becomes: nodejs24
+    version: ${{ inputs.node-version }}        # Becomes: 24
 ```
 
 Template substitution works in all dependency fields: `package`, `version`, `url`, `installScript.args`, etc.

@@ -57,7 +57,7 @@ outputs:
   head_sha:
     description: Head commit SHA for pull requests and validated merge queue pushes
 runs:
-  using: 'node20'
+  using: 'node24'
   main: 'dist/index.js'
 branding:
   color: blue
