@@ -245,7 +245,7 @@ docs:
     expect(mockOutputs.docs_count).toBe(1)
     expect(mockOutputs.base_sha).toBe(fixture.candidateParent)
     expect(mockOutputs.head_sha).toBe(fixture.candidate)
-    expect(mockContext.payload.before).toBe('0'.repeat(40))
+    expect(mockContext.payload.before).toBe(fixture.candidateParent)
     expect(mockGetOctokit).not.toHaveBeenCalled()
 
     fs.writeFileSync(path.join(checkout, '.github', 'filters.yml'), "wrong: '**'\n")
@@ -436,7 +436,7 @@ docs:
 
     await run()
 
-    expect(mockFailures.join('\n')).toMatch(/nonzero lowercase SHAs/i)
+    expect(mockFailures.join('\n')).toMatch(/nonzero lowercase SHA/i)
     expect(mockOutputs).toEqual({})
   })
 
@@ -491,15 +491,32 @@ docs:
 
     await run()
 
-    expect(mockFailures.join('\n')).toMatch(/distinct nonzero lowercase SHAs/i)
+    expect(mockFailures.join('\n')).toMatch(/nonzero lowercase SHA/i)
     expect(mockOutputs).toEqual({})
   })
 
-  test('runs every filter when the candidate first parent is not an ancestor', async () => {
-    const emptyWorkingDirectory = path.join(fixture.root, 'non-ancestor')
-    fs.mkdirSync(emptyWorkingDirectory)
-    configureQueuePush({parentSha: fixture.unrelated})
-    mockInputs['working-directory'] = emptyWorkingDirectory
+  test('compares from the push before commit, not the candidate first parent', async () => {
+    configureQueuePush({payloadBefore: fixture.base})
+    mockInputs['working-directory'] = fs.mkdtempSync(path.join(fixture.root, 'before-base-'))
+    mockInputs.token = ''
+    mockInputs.filters = "source: 'src/**'\ndocs: 'docs/**'\n"
+
+    await run()
+
+    expect(mockFailures).toEqual([])
+    expect(mockOutputs.source).toBe(true)
+    expect(mockOutputs.docs).toBe(true)
+    expect(mockOutputs.base_sha).toBe(fixture.base)
+    expect(mockOutputs.head_sha).toBe(fixture.candidate)
+  })
+
+  test.each([
+    ['zero, as when the push created the ref', '0'.repeat(40)],
+    ['malformed', 'not-a-sha'],
+    ['the candidate itself', 'candidate']
+  ])('runs every filter when the push before commit is %s', async (_name, payloadBefore) => {
+    configureQueuePush({payloadBefore: payloadBefore === 'candidate' ? fixture.candidate : payloadBefore})
+    mockInputs['working-directory'] = fs.mkdtempSync(path.join(fixture.root, 'invalid-before-'))
     mockInputs.token = ''
     mockInputs.filters = "all: '**'\nmissing: 'does-not-exist/**'\n"
 
@@ -511,26 +528,16 @@ docs:
     expect(mockOutputs.base_sha).toBeUndefined()
   })
 
-  test.each([
-    ['missing', undefined, true, false],
-    ['malformed', 'not-a-sha', false, false],
-    ['zero', '0'.repeat(40), false, false],
-    ['same as candidate', undefined, false, true]
-  ])('runs every filter when the first parent is %s', async (_name, parentSha, missingParent, candidateParent) => {
-    configureQueuePush({
-      parentSha: candidateParent ? fixture.candidate : parentSha,
-      omitParent: missingParent
-    })
-    mockInputs['working-directory'] = fs.mkdtempSync(path.join(fixture.root, 'invalid-parent-'))
+  test('fails when the push before commit is not an ancestor of the candidate', async () => {
+    configureQueuePush({payloadBefore: fixture.unrelated})
+    mockInputs['working-directory'] = fs.mkdtempSync(path.join(fixture.root, 'non-ancestor-'))
     mockInputs.token = ''
-    mockInputs.filters = "all: '**'\nmissing: 'does-not-exist/**'\n"
+    mockInputs.filters = "all: '**'\n"
 
     await run()
 
-    expect(mockFailures).toEqual([])
-    expect(mockOutputs.all).toBe(true)
-    expect(mockOutputs.missing).toBe(true)
-    expect(mockOutputs.base_sha).toBeUndefined()
+    expect(mockFailures.join('\n')).toMatch(/not an ancestor/i)
+    expect(mockOutputs).toEqual({})
   })
 
   test('rejects a checkout at the wrong commit before fetching', async () => {
@@ -603,8 +610,6 @@ function configureQueuePush(
     payloadAfter?: string
     payloadBefore?: string
     payloadRef?: string
-    parentSha?: string
-    omitParent?: boolean
     repositoryFullName?: string
     deleted?: boolean
     serverUrl?: string
@@ -614,17 +619,18 @@ function configureQueuePush(
   const githubSha = overrides.githubSha ?? fixture.candidate
   const payloadAfter = overrides.payloadAfter ?? fixture.candidate
   const ref = overrides.ref ?? `refs/heads/ravion/merge-queue/generation_1-test/${base}`
+  const isQueueRef = ref.startsWith('refs/heads/ravion/merge-queue/')
   mockContext.eventName = 'push'
   mockContext.ref = ref
   mockContext.sha = githubSha
   mockContext.serverUrl = overrides.serverUrl ?? fixture.serverUrl
   mockContext.payload = {
     ref: overrides.payloadRef ?? ref,
-    before: overrides.payloadBefore ?? '0'.repeat(40),
+    // The queue creates a candidate ref at its comparison base, then fast-forwards it to the candidate.
+    before: overrides.payloadBefore ?? (isQueueRef ? fixture.candidateParent : '0'.repeat(40)),
     after: payloadAfter,
-    head_commit: overrides.omitParent
-      ? {id: githubSha}
-      : {id: githubSha, parents: [{sha: overrides.parentSha ?? fixture.candidateParent}]},
+    // GitHub's push payload has no parents on head_commit.
+    head_commit: {id: githubSha},
     deleted: overrides.deleted ?? false,
     repository: {
       default_branch: 'main',

@@ -947,7 +947,7 @@ function getPushComparison(baseInput, refInput, token) {
 }
 exports.getPushComparison = getPushComparison;
 function getQueuePush(baseInput, refInput, token) {
-    var _a, _b, _c, _d;
+    var _a, _b;
     if (github.context.eventName !== 'push' || !github.context.ref.startsWith(queueRefPrefix)) {
         return undefined;
     }
@@ -961,16 +961,18 @@ function getQueuePush(baseInput, refInput, token) {
     const { owner, repo } = github.context.repo;
     const serverUrl = github.context.serverUrl;
     const headSha = github.context.sha;
-    const headCommit = payload.head_commit;
-    const baseSha = (_c = (_b = (_a = headCommit === null || headCommit === void 0 ? void 0 : headCommit.parents) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.sha) !== null && _c !== void 0 ? _c : '';
+    // The queue creates the candidate ref at the candidate's comparison base, then fast-forwards
+    // it to the candidate, so the push's before commit is what the candidate adds to.
+    const baseSha = (_a = payload.before) !== null && _a !== void 0 ? _a : '';
     if (payload.deleted || !shaPattern.test(headSha) || headSha === nullSha) {
-        throw new Error('Merge queue candidate and its first parent must be distinct nonzero lowercase SHAs');
+        throw new Error('Merge queue candidate must be a nonzero lowercase SHA');
     }
+    // A push that created the ref has no before commit to compare against.
     const forceAll = !shaPattern.test(baseSha) || baseSha === nullSha || baseSha === headSha;
     if (payload.ref !== ref || payload.after !== headSha || !shaPattern.test(payload.after)) {
         throw new Error('Merge queue ref, payload ref, payload after, and GITHUB_SHA must match');
     }
-    if (((_d = payload.repository) === null || _d === void 0 ? void 0 : _d.full_name) !== `${owner}/${repo}`) {
+    if (((_b = payload.repository) === null || _b === void 0 ? void 0 : _b.full_name) !== `${owner}/${repo}`) {
         throw new Error('Merge queue payload repository does not match the GitHub context repository');
     }
     if (!forceAll && baseInput && baseInput !== baseSha) {
@@ -984,7 +986,7 @@ function getQueuePush(baseInput, refInput, token) {
 }
 exports.getQueuePush = getQueuePush;
 async function getQueueChanges(queue, token, filterPath) {
-    var _a, _b;
+    var _a;
     const workingDirectory = process.cwd();
     let configPrefix = '';
     let checkoutRepository;
@@ -1015,17 +1017,10 @@ async function getQueueChanges(queue, token, filterPath) {
         if (checkoutRepository) {
             configureCheckoutAlternates(temporaryRepository, checkoutRepository);
         }
-        let forceAll = (_a = queue.forceAll) !== null && _a !== void 0 ? _a : false;
+        const forceAll = (_a = queue.forceAll) !== null && _a !== void 0 ? _a : false;
         await acquireQueueHead(temporaryRepository, queue.headSha, gitEnv);
         if (!forceAll) {
-            if (queue.requireAncestor !== false) {
-                const commit = await runGit(temporaryRepository, ['cat-file', 'commit', queue.headSha], gitEnv);
-                const firstParent = (_b = /^parent ([0-9a-f]{40})$/m.exec(commit)) === null || _b === void 0 ? void 0 : _b[1];
-                forceAll = firstParent !== queue.baseSha;
-            }
-            if (!forceAll) {
-                await acquireQueueCommits(temporaryRepository, queue, gitEnv);
-            }
+            await acquireQueueCommits(temporaryRepository, queue, gitEnv);
         }
         if (forceAll) {
             queue.forceAll = true;

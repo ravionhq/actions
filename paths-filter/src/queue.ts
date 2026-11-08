@@ -86,17 +86,14 @@ export function getQueuePush(baseInput: string, refInput: string, token: string)
   const {owner, repo} = github.context.repo
   const serverUrl = github.context.serverUrl
   const headSha = github.context.sha
-  const headCommit = payload.head_commit as
-    | (typeof payload.head_commit & {
-        parents?: Array<{sha?: string}>
-      })
-    | null
-    | undefined
-  const baseSha = headCommit?.parents?.[0]?.sha ?? ''
+  // The queue creates the candidate ref at the candidate's comparison base, then fast-forwards
+  // it to the candidate, so the push's before commit is what the candidate adds to.
+  const baseSha = payload.before ?? ''
 
   if (payload.deleted || !shaPattern.test(headSha) || headSha === nullSha) {
-    throw new Error('Merge queue candidate and its first parent must be distinct nonzero lowercase SHAs')
+    throw new Error('Merge queue candidate must be a nonzero lowercase SHA')
   }
+  // A push that created the ref has no before commit to compare against.
   const forceAll = !shaPattern.test(baseSha) || baseSha === nullSha || baseSha === headSha
   if (payload.ref !== ref || payload.after !== headSha || !shaPattern.test(payload.after)) {
     throw new Error('Merge queue ref, payload ref, payload after, and GITHUB_SHA must match')
@@ -151,17 +148,10 @@ export async function getQueueChanges(queue: QueuePush, token: string, filterPat
     if (checkoutRepository) {
       configureCheckoutAlternates(temporaryRepository, checkoutRepository)
     }
-    let forceAll = queue.forceAll ?? false
+    const forceAll = queue.forceAll ?? false
     await acquireQueueHead(temporaryRepository, queue.headSha, gitEnv)
     if (!forceAll) {
-      if (queue.requireAncestor !== false) {
-        const commit = await runGit(temporaryRepository, ['cat-file', 'commit', queue.headSha], gitEnv)
-        const firstParent = /^parent ([0-9a-f]{40})$/m.exec(commit)?.[1]
-        forceAll = firstParent !== queue.baseSha
-      }
-      if (!forceAll) {
-        await acquireQueueCommits(temporaryRepository, queue, gitEnv)
-      }
+      await acquireQueueCommits(temporaryRepository, queue, gitEnv)
     }
     if (forceAll) {
       queue.forceAll = true
