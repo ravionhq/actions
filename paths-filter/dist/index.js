@@ -953,22 +953,22 @@ function getQueuePush(baseInput, refInput, token) {
     }
     maskSecret(token);
     const ref = github.context.ref;
-    const match = /^refs\/heads\/ravion\/merge-queue\/[A-Za-z0-9_-]{1,100}\/[0-9a-f]{40}$/.exec(ref);
-    if (!match) {
+    const match = /^refs\/heads\/ravion\/merge-queue\/[A-Za-z0-9_-]{1,100}\/[0-9a-f]{40}(?:\/([0-9a-f]{40}))?$/.exec(ref);
+    if (!match || match[1] === nullSha) {
         throw new Error(`Malformed merge queue ref '${ref}'`);
     }
     const payload = github.context.payload;
     const { owner, repo } = github.context.repo;
     const serverUrl = github.context.serverUrl;
     const headSha = github.context.sha;
-    // The queue creates the candidate ref at the candidate's comparison base, then fast-forwards
-    // it to the candidate, so the push's before commit is what the candidate adds to.
-    const baseSha = (_a = payload.before) !== null && _a !== void 0 ? _a : '';
+    // The queue names the candidate's comparison base, the commit it adds its pull requests to,
+    // as the ref's last component. The push before commit is all zeros because the push creates the ref.
+    const baseSha = (_a = match[1]) !== null && _a !== void 0 ? _a : '';
     if (payload.deleted || !shaPattern.test(headSha) || headSha === nullSha) {
         throw new Error('Merge queue candidate must be a nonzero lowercase SHA');
     }
-    // A push that created the ref has no before commit to compare against.
-    const forceAll = !shaPattern.test(baseSha) || baseSha === nullSha || baseSha === headSha;
+    // Refs published before the queue named the comparison base have nothing exact to compare against.
+    const forceAll = !baseSha || baseSha === headSha;
     if (payload.ref !== ref || payload.after !== headSha || !shaPattern.test(payload.after)) {
         throw new Error('Merge queue ref, payload ref, payload after, and GITHUB_SHA must match');
     }

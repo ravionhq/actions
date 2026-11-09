@@ -245,7 +245,7 @@ docs:
     expect(mockOutputs.docs_count).toBe(1)
     expect(mockOutputs.base_sha).toBe(fixture.candidateParent)
     expect(mockOutputs.head_sha).toBe(fixture.candidate)
-    expect(mockContext.payload.before).toBe(fixture.candidateParent)
+    expect(mockContext.payload.before).toBe('0'.repeat(40))
     expect(mockGetOctokit).not.toHaveBeenCalled()
 
     fs.writeFileSync(path.join(checkout, '.github', 'filters.yml'), "wrong: '**'\n")
@@ -417,6 +417,24 @@ docs:
       `refs/heads/ravion/merge-queue/generation/${'A'.repeat(40)}`,
       '1'.repeat(40),
       '1'.repeat(40)
+    ],
+    [
+      'zero comparison SHA',
+      `refs/heads/ravion/merge-queue/generation/${'2'.repeat(40)}/${'0'.repeat(40)}`,
+      '1'.repeat(40),
+      '1'.repeat(40)
+    ],
+    [
+      'uppercase comparison SHA',
+      `refs/heads/ravion/merge-queue/generation/${'2'.repeat(40)}/${'A'.repeat(40)}`,
+      '1'.repeat(40),
+      '1'.repeat(40)
+    ],
+    [
+      'extra ref component',
+      `refs/heads/ravion/merge-queue/generation/${'2'.repeat(40)}/${'3'.repeat(40)}/extra`,
+      '1'.repeat(40),
+      '1'.repeat(40)
     ]
   ])('rejects %s', async (_name, ref, githubSha, payloadAfter) => {
     configureQueuePush({ref, githubSha, payloadAfter})
@@ -495,9 +513,9 @@ docs:
     expect(mockOutputs).toEqual({})
   })
 
-  test('compares from the push before commit, not the candidate first parent', async () => {
-    configureQueuePush({payloadBefore: fixture.base})
-    mockInputs['working-directory'] = fs.mkdtempSync(path.join(fixture.root, 'before-base-'))
+  test('compares from the comparison base named in the ref, not the candidate first parent', async () => {
+    configureQueuePush({comparison: fixture.base, payloadBefore: fixture.unrelated})
+    mockInputs['working-directory'] = fs.mkdtempSync(path.join(fixture.root, 'ref-comparison-'))
     mockInputs.token = ''
     mockInputs.filters = "source: 'src/**'\ndocs: 'docs/**'\n"
 
@@ -511,12 +529,11 @@ docs:
   })
 
   test.each([
-    ['zero, as when the push created the ref', '0'.repeat(40)],
-    ['malformed', 'not-a-sha'],
-    ['the candidate itself', 'candidate']
-  ])('runs every filter when the push before commit is %s', async (_name, payloadBefore) => {
-    configureQueuePush({payloadBefore: payloadBefore === 'candidate' ? fixture.candidate : payloadBefore})
-    mockInputs['working-directory'] = fs.mkdtempSync(path.join(fixture.root, 'invalid-before-'))
+    ['has no comparison base', null],
+    ['names the candidate itself', 'candidate']
+  ])('runs every filter when the queue ref %s', async (_name, comparison) => {
+    configureQueuePush({comparison: comparison === 'candidate' ? fixture.candidate : comparison})
+    mockInputs['working-directory'] = fs.mkdtempSync(path.join(fixture.root, 'no-comparison-'))
     mockInputs.token = ''
     mockInputs.filters = "all: '**'\nmissing: 'does-not-exist/**'\n"
 
@@ -528,8 +545,8 @@ docs:
     expect(mockOutputs.base_sha).toBeUndefined()
   })
 
-  test('fails when the push before commit is not an ancestor of the candidate', async () => {
-    configureQueuePush({payloadBefore: fixture.unrelated})
+  test('fails when the comparison base is not an ancestor of the candidate', async () => {
+    configureQueuePush({comparison: fixture.unrelated})
     mockInputs['working-directory'] = fs.mkdtempSync(path.join(fixture.root, 'non-ancestor-'))
     mockInputs.token = ''
     mockInputs.filters = "all: '**'\n"
@@ -605,6 +622,7 @@ docs:
 function configureQueuePush(
   overrides: {
     base?: string
+    comparison?: string | null
     ref?: string
     githubSha?: string
     payloadAfter?: string
@@ -618,16 +636,17 @@ function configureQueuePush(
   const base = overrides.base ?? fixture.base
   const githubSha = overrides.githubSha ?? fixture.candidate
   const payloadAfter = overrides.payloadAfter ?? fixture.candidate
-  const ref = overrides.ref ?? `refs/heads/ravion/merge-queue/generation_1-test/${base}`
-  const isQueueRef = ref.startsWith('refs/heads/ravion/merge-queue/')
+  const comparison = overrides.comparison === undefined ? fixture.candidateParent : overrides.comparison
+  const queueRef = `refs/heads/ravion/merge-queue/generation_1-test/${base}`
+  const ref = overrides.ref ?? (comparison === null ? queueRef : `${queueRef}/${comparison}`)
   mockContext.eventName = 'push'
   mockContext.ref = ref
   mockContext.sha = githubSha
   mockContext.serverUrl = overrides.serverUrl ?? fixture.serverUrl
   mockContext.payload = {
     ref: overrides.payloadRef ?? ref,
-    // The queue creates a candidate ref at its comparison base, then fast-forwards it to the candidate.
-    before: overrides.payloadBefore ?? (isQueueRef ? fixture.candidateParent : '0'.repeat(40)),
+    // Queue pushes create the candidate ref, so GitHub reports no before commit.
+    before: overrides.payloadBefore ?? '0'.repeat(40),
     after: payloadAfter,
     // GitHub's push payload has no parents on head_commit.
     head_commit: {id: githubSha},
