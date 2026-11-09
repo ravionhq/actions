@@ -417,6 +417,24 @@ docs:
       `refs/heads/ravion/merge-queue/generation/${'A'.repeat(40)}`,
       '1'.repeat(40),
       '1'.repeat(40)
+    ],
+    [
+      'zero comparison SHA',
+      `refs/heads/ravion/merge-queue/generation/${'2'.repeat(40)}/${'0'.repeat(40)}`,
+      '1'.repeat(40),
+      '1'.repeat(40)
+    ],
+    [
+      'uppercase comparison SHA',
+      `refs/heads/ravion/merge-queue/generation/${'2'.repeat(40)}/${'A'.repeat(40)}`,
+      '1'.repeat(40),
+      '1'.repeat(40)
+    ],
+    [
+      'extra ref component',
+      `refs/heads/ravion/merge-queue/generation/${'2'.repeat(40)}/${'3'.repeat(40)}/extra`,
+      '1'.repeat(40),
+      '1'.repeat(40)
     ]
   ])('rejects %s', async (_name, ref, githubSha, payloadAfter) => {
     configureQueuePush({ref, githubSha, payloadAfter})
@@ -436,7 +454,7 @@ docs:
 
     await run()
 
-    expect(mockFailures.join('\n')).toMatch(/nonzero lowercase SHAs/i)
+    expect(mockFailures.join('\n')).toMatch(/nonzero lowercase SHA/i)
     expect(mockOutputs).toEqual({})
   })
 
@@ -491,15 +509,31 @@ docs:
 
     await run()
 
-    expect(mockFailures.join('\n')).toMatch(/distinct nonzero lowercase SHAs/i)
+    expect(mockFailures.join('\n')).toMatch(/nonzero lowercase SHA/i)
     expect(mockOutputs).toEqual({})
   })
 
-  test('runs every filter when the candidate first parent is not an ancestor', async () => {
-    const emptyWorkingDirectory = path.join(fixture.root, 'non-ancestor')
-    fs.mkdirSync(emptyWorkingDirectory)
-    configureQueuePush({parentSha: fixture.unrelated})
-    mockInputs['working-directory'] = emptyWorkingDirectory
+  test('compares from the comparison base named in the ref, not the candidate first parent', async () => {
+    configureQueuePush({comparison: fixture.base, payloadBefore: fixture.unrelated})
+    mockInputs['working-directory'] = fs.mkdtempSync(path.join(fixture.root, 'ref-comparison-'))
+    mockInputs.token = ''
+    mockInputs.filters = "source: 'src/**'\ndocs: 'docs/**'\n"
+
+    await run()
+
+    expect(mockFailures).toEqual([])
+    expect(mockOutputs.source).toBe(true)
+    expect(mockOutputs.docs).toBe(true)
+    expect(mockOutputs.base_sha).toBe(fixture.base)
+    expect(mockOutputs.head_sha).toBe(fixture.candidate)
+  })
+
+  test.each([
+    ['has no comparison base', null],
+    ['names the candidate itself', 'candidate']
+  ])('runs every filter when the queue ref %s', async (_name, comparison) => {
+    configureQueuePush({comparison: comparison === 'candidate' ? fixture.candidate : comparison})
+    mockInputs['working-directory'] = fs.mkdtempSync(path.join(fixture.root, 'no-comparison-'))
     mockInputs.token = ''
     mockInputs.filters = "all: '**'\nmissing: 'does-not-exist/**'\n"
 
@@ -511,26 +545,16 @@ docs:
     expect(mockOutputs.base_sha).toBeUndefined()
   })
 
-  test.each([
-    ['missing', undefined, true, false],
-    ['malformed', 'not-a-sha', false, false],
-    ['zero', '0'.repeat(40), false, false],
-    ['same as candidate', undefined, false, true]
-  ])('runs every filter when the first parent is %s', async (_name, parentSha, missingParent, candidateParent) => {
-    configureQueuePush({
-      parentSha: candidateParent ? fixture.candidate : parentSha,
-      omitParent: missingParent
-    })
-    mockInputs['working-directory'] = fs.mkdtempSync(path.join(fixture.root, 'invalid-parent-'))
+  test('fails when the comparison base is not an ancestor of the candidate', async () => {
+    configureQueuePush({comparison: fixture.unrelated})
+    mockInputs['working-directory'] = fs.mkdtempSync(path.join(fixture.root, 'non-ancestor-'))
     mockInputs.token = ''
-    mockInputs.filters = "all: '**'\nmissing: 'does-not-exist/**'\n"
+    mockInputs.filters = "all: '**'\n"
 
     await run()
 
-    expect(mockFailures).toEqual([])
-    expect(mockOutputs.all).toBe(true)
-    expect(mockOutputs.missing).toBe(true)
-    expect(mockOutputs.base_sha).toBeUndefined()
+    expect(mockFailures.join('\n')).toMatch(/not an ancestor/i)
+    expect(mockOutputs).toEqual({})
   })
 
   test('rejects a checkout at the wrong commit before fetching', async () => {
@@ -598,13 +622,12 @@ docs:
 function configureQueuePush(
   overrides: {
     base?: string
+    comparison?: string | null
     ref?: string
     githubSha?: string
     payloadAfter?: string
     payloadBefore?: string
     payloadRef?: string
-    parentSha?: string
-    omitParent?: boolean
     repositoryFullName?: string
     deleted?: boolean
     serverUrl?: string
@@ -613,18 +636,20 @@ function configureQueuePush(
   const base = overrides.base ?? fixture.base
   const githubSha = overrides.githubSha ?? fixture.candidate
   const payloadAfter = overrides.payloadAfter ?? fixture.candidate
-  const ref = overrides.ref ?? `refs/heads/ravion/merge-queue/generation_1-test/${base}`
+  const comparison = overrides.comparison === undefined ? fixture.candidateParent : overrides.comparison
+  const queueRef = `refs/heads/ravion/merge-queue/generation_1-test/${base}`
+  const ref = overrides.ref ?? (comparison === null ? queueRef : `${queueRef}/${comparison}`)
   mockContext.eventName = 'push'
   mockContext.ref = ref
   mockContext.sha = githubSha
   mockContext.serverUrl = overrides.serverUrl ?? fixture.serverUrl
   mockContext.payload = {
     ref: overrides.payloadRef ?? ref,
+    // Queue pushes create the candidate ref, so GitHub reports no before commit.
     before: overrides.payloadBefore ?? '0'.repeat(40),
     after: payloadAfter,
-    head_commit: overrides.omitParent
-      ? {id: githubSha}
-      : {id: githubSha, parents: [{sha: overrides.parentSha ?? fixture.candidateParent}]},
+    // GitHub's push payload has no parents on head_commit.
+    head_commit: {id: githubSha},
     deleted: overrides.deleted ?? false,
     repository: {
       default_branch: 'main',

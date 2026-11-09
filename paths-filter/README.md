@@ -55,20 +55,23 @@ don't allow this because they don't work on a level of individual jobs or steps.
 
 ### Ravion merge queue pushes
 
-This fork also recognizes `push` events whose ref is exactly
-`refs/heads/ravion/merge-queue/<generation>/<base-sha>`. The generation is 1–100
-ASCII letters, digits, underscores, or hyphens, and the final component is a 40-character
-lowercase base commit SHA. `GITHUB_SHA` and push payload `after` identify the candidate
-commit, and must be equal, nonzero lowercase SHAs distinct from the ref's base SHA. The push
-payload `before` is ignored because immutable branch creation reports the all-zero SHA there.
+This fork also recognizes `push` events whose ref is
+`refs/heads/ravion/merge-queue/<generation>/<base-sha>/<comparison-sha>`. The generation is
+1–100 ASCII letters, digits, underscores, or hyphens, and both SHAs are 40-character
+lowercase, nonzero commit SHAs. The comparison SHA is the commit the candidate adds its pull
+requests to: the base branch, or the candidate ahead of it in the queue. `GITHUB_SHA` and push
+payload `after` identify the candidate commit, and must be equal, nonzero lowercase SHAs. The
+push payload `before` is ignored because creating the candidate ref reports the all-zero SHA
+there. Refs without the comparison SHA, which older queue versions published, and refs whose
+comparison SHA is the candidate itself report every filter as changed.
 
 Queue mode takes precedence over the `base` and `ref` inputs. If supplied, `base` must equal
-the SHA in the queue ref, and `ref` must equal either the queue ref or candidate SHA. A
+the comparison SHA in the queue ref, and `ref` must equal either the queue ref or candidate SHA. A
 conflict, deleted push, or malformed queue-prefixed ref fails the action rather than falling
 back to normal comparison.
 
-Queue comparisons use a direct `base..candidate` Git diff with rename detection disabled.
-The base must be an ancestor of the candidate. With an existing checkout, the action first
+Queue comparisons use a direct `comparison..candidate` Git diff with rename detection
+disabled. The comparison commit must be an ancestor of the candidate. With an existing checkout, the action first
 verifies that `HEAD` is the candidate commit and that `origin` is the repository identified
 by the GitHub event. The isolated temporary bare repository reuses existing checkout objects
 as alternates and fetches missing commits/history only when necessary; without a checkout it
